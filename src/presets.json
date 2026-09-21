@@ -1,0 +1,171 @@
+{
+  "$comment": "Defaults, not truth. Every value can be overridden per provider in config.json. Keep this table small; a preset is a base URL plus a Capabilities record.",
+  "openai": {
+    "wire": "openai-responses",
+    "baseUrl": "https://api.openai.com/v1",
+    "capabilities": {
+      "reasoning": "effort",
+      "reasoningLevels": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    }
+  },
+  "chatgpt": {
+    "wire": "openai-responses",
+    "baseUrl": "https://chatgpt.com/backend-api/codex",
+    "credential": "chatgpt",
+    "capabilities": {
+      "reasoning": "effort",
+      "reasoningLevels": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "tools": true,
+      "images": true,
+      "temperature": false,
+      "stream": "sse"
+    },
+    "note": "Codex's own backend via a ChatGPT subscription. Use bare OpenAI model names with defaultProvider so Codex keeps its native dialect."
+  },
+  "anthropic": {
+    "wire": "anthropic",
+    "baseUrl": "https://api.anthropic.com",
+    "capabilities": {
+      "reasoning": "budget",
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    }
+  },
+  "google": {
+    "wire": "gemini",
+    "baseUrl": "https://generativelanguage.googleapis.com",
+    "capabilities": {
+      "reasoning": "budget",
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    }
+  },
+  "xai": {
+    "wire": "openai-responses",
+    "baseUrl": "https://api.x.ai/v1",
+    "capabilities": {
+      "reasoning": "effort",
+      "reasoningLevels": [
+        "low",
+        "high"
+      ],
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    }
+  },
+  "deepseek": {
+    "wire": "openai-chat",
+    "baseUrl": "https://api.deepseek.com/v1",
+    "capabilities": {
+      "reasoning": "reasoning_content",
+      "tools": true,
+      "images": false,
+      "temperature": true,
+      "stream": "sse"
+    }
+  },
+  "moonshot": {
+    "wire": "openai-chat",
+    "baseUrl": "https://api.moonshot.ai/v1",
+    "capabilities": {
+      "reasoning": "reasoning_content",
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    }
+  },
+  "zhipu": {
+    "wire": "openai-chat",
+    "baseUrl": "https://api.z.ai/api/paas/v4",
+    "capabilities": {
+      "reasoning": "toggle",
+      "reasoningToggle": {
+        "field": "thinking",
+        "on": {
+          "type": "enabled"
+        },
+        "off": {
+          "type": "disabled"
+        }
+      },
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    }
+  },
+  "qwen": {
+    "wire": "openai-chat",
+    "baseUrl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "capabilities": {
+      "reasoning": "toggle",
+      "reasoningToggle": {
+        "field": "enable_thinking",
+        "on": true,
+        "off": false
+      },
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    }
+  },
+  "groq": {
+    "wire": "openai-chat",
+    "baseUrl": "https://api.groq.com/openai/v1",
+    "capabilities": {
+      "reasoning": "none",
+      "tools": true,
+      "images": false,
+      "temperature": true,
+      "stream": "sse"
+    }
+  },
+  "openrouter": {
+    "wire": "openai-chat",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "capabilities": {
+      "reasoning": "effort",
+      "reasoningLevels": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    }
+  },
+  "ollama": {
+    "wire": "openai-chat",
+    "baseUrl": "http://localhost:11434/v1",
+    "capabilities": {
+      "reasoning": "none",
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    },
+    "note": "No API key required."
+  }
+}

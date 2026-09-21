@@ -1,0 +1,35 @@
+{
+  "name": "modelplug",
+  "version": "0.0.1",
+  "description": "Plug any model into Codex and Claude Code. A small local proxy, nothing else.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "modelplug": "./bin/modelplug.js"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node src/main.ts",
+    "dev": "node --watch src/main.ts",
+    "test": "node --test 'test/**/*.test.ts'",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json && node --input-type=module -e \"import {copyFileSync} from 'node:fs'; copyFileSync('src/presets.json','dist/presets.json')\"",
+    "check": "npm run typecheck && npm test",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "zod": "^4.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^7.0.0"
+  }
+}
