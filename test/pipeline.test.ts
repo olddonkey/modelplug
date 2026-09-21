@@ -38,9 +38,13 @@ async function harness(handlers: FakeHandler[], options: { tokenPort?: number } 
   });
   const config = parseConfig(
     {
-      providers: { chatgpt: { preset: "chatgpt", baseUrl: `http://127.0.0.1:${upstream.port}` }, ollama: { preset: "ollama" } },
+      providers: {
+        chatgpt: { preset: "chatgpt", baseUrl: `http://127.0.0.1:${upstream.port}` },
+        local: { preset: "ollama", baseUrl: `http://127.0.0.1:${upstream.port}/v1` },
+        anth: { preset: "anthropic", apiKey: "k" },
+      },
       defaultProvider: "chatgpt",
-      aliases: { sol: "chatgpt/gpt-5.6-sol", local: "ollama/qwen3" },
+      aliases: { sol: "chatgpt/gpt-5.6-sol", missing: "anth/claude" },
     },
     "test",
   );
@@ -218,9 +222,9 @@ test("local refusals: missing model, previous_response_id, wire not served yet",
     const prev = await h.post({ model: "gpt-5.6-sol", previous_response_id: "resp_0" });
     assert.equal(prev.status, 400);
     assert.match(((await prev.json()) as { error: { message: string } }).error.message, /previous_response_id is not supported/);
-    const routed = await h.post({ model: "local" });
+    const routed = await h.post({ model: "missing" });
     assert.equal(routed.status, 400);
-    assert.match(((await routed.json()) as { error: { message: string } }).error.message, /wire "openai-chat".*cannot serve yet/);
+    assert.match(((await routed.json()) as { error: { message: string } }).error.message, /wire "anthropic".*cannot serve yet/);
     assert.equal(h.upstream.calls, 0);
   } finally {
     await h.stop();
@@ -268,4 +272,84 @@ test("the usage probe sniffs SSE or JSON when the upstream sends no content-type
   const typed = createUsageProbe("text/event-stream; charset=utf-8");
   typed.observe(enc.encode('data:{"type":"response.completed","response":{"usage":{"input_tokens":1,"output_tokens":2}}}\n'));
   assert.deepEqual(typed.result(), { inputTokens: 1, outputTokens: 2 });
+});
+
+const CHAT_SSE = [
+  { id: "c", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }] },
+  { id: "c", object: "chat.completion.chunk", choices: [{ index: 0, delta: { content: "hello" }, finish_reason: null }] },
+  { id: "c", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
+  { id: "c", object: "chat.completion.chunk", choices: [], usage: { prompt_tokens: 40, completion_tokens: 1 } },
+]
+  .map(c => `data: ${JSON.stringify(c)}\n\n`)
+  .join("") + "data: [DONE]\n\n";
+
+test("IR path: a classic Codex request is translated to Chat Completions and the answer comes back as Responses SSE", async () => {
+  const seen: Record<string, unknown> = {};
+  const h = await harness([
+    (req, res, body) => {
+      seen.path = req.url;
+      seen.auth = req.headers.authorization ?? null;
+      const parsed = JSON.parse(body) as Record<string, any>;
+      seen.model = parsed.model;
+      seen.firstRole = parsed.messages[0].role;
+      seen.toolNames = parsed.tools.map((t: { function: { name: string } }) => t.function.name);
+      seen.stream = parsed.stream;
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(CHAT_SSE);
+    },
+  ]);
+  try {
+    const request = JSON.parse(readFileSync(new URL("./fixtures/responses/classic/hello.request.json", import.meta.url), "utf8")) as Record<string, unknown>;
+    const res = await h.post({ ...request, model: "local/qwen3" });
+    assert.equal(res.status, 200);
+    assert.match(res.headers.get("content-type")!, /text\/event-stream/);
+    const text = await res.text();
+    assert.equal(seen.path, "/v1/chat/completions");
+    assert.equal(seen.auth, null, "the ollama preset has no key");
+    assert.equal(seen.model, "qwen3");
+    assert.equal(seen.firstRole, "system");
+    assert.ok((seen.toolNames as string[]).includes("exec_command"));
+    assert.ok((seen.toolNames as string[]).includes("multi_agent_v1__spawn_agent"));
+    assert.equal(seen.stream, true);
+    assert.match(text, /event: response\.created/);
+    assert.match(text, /"delta":"hello"/);
+    assert.match(text, /event: response\.completed/);
+    assert.match(text, /"input_tokens":40/);
+    const line = JSON.parse(readFileSync(h.usageLogPath, "utf8").trim().split("\n").at(-1)!) as { provider: string; model: string; usage: { inputTokens: number } };
+    assert.equal(line.provider, "local");
+    assert.equal(line.model, "qwen3");
+    assert.equal(line.usage.inputTokens, 40);
+  } finally {
+    await h.stop();
+  }
+});
+
+test("IR path: a tool call from the model becomes a function_call item; a Lite request is refused locally", async () => {
+  const toolSse = [
+    { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "call_1", type: "function", function: { name: "exec_command", arguments: "" } }] }, finish_reason: null }] },
+    { choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: '{"cmd":"ls"}' } }] }, finish_reason: null }] },
+    { choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }], usage: { prompt_tokens: 5, completion_tokens: 3 } },
+  ]
+    .map(c => `data: ${JSON.stringify(c)}\n\n`)
+    .join("") + "data: [DONE]\n\n";
+  const h = await harness([
+    (_req, res) => {
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(toolSse);
+    },
+  ]);
+  try {
+    const request = JSON.parse(readFileSync(new URL("./fixtures/responses/classic/hello.request.json", import.meta.url), "utf8")) as Record<string, unknown>;
+    const res = await h.post({ ...request, model: "local/qwen3" });
+    const text = await res.text();
+    assert.match(text, /event: response\.function_call_arguments\.done/);
+    assert.match(text, /"call_id":"call_1","name":"exec_command","arguments":"{\\"cmd\\":\\"ls\\"}"/);
+    const liteBody = JSON.parse(readFileSync(new URL("./fixtures/responses/lite/hello.request.json", import.meta.url), "utf8")) as Record<string, unknown>;
+    const lite = await h.post({ ...liteBody, model: "local/qwen3" });
+    assert.equal(lite.status, 400);
+    assert.match(((await lite.json()) as { error: { message: string } }).error.message, /Responses Lite/);
+    assert.equal(h.upstream.calls, 1);
+  } finally {
+    await h.stop();
+  }
 });

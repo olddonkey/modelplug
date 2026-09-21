@@ -147,8 +147,8 @@ async function start(config: ResolvedConfig, portFlag: string | undefined, optio
     console.log(`usage log: ${config.usageLog ? defaultUsageLogPath() : "off"}`);
     const chatgpt = Object.values(config.providers).filter(p => p.credential === "chatgpt").map(p => p.name);
     if (chatgpt.length > 0) console.log(`chatgpt passthrough: ${chatgpt.join(", ")}  (accounts and quota: http://${config.host}:${port}/)`);
-    const routed = Object.values(config.providers).filter(p => p.wire !== "openai-responses").map(p => `${p.name} (${p.wire})`);
-    if (routed.length > 0) console.log(`not served yet in this build: ${routed.join(", ")}`);
+    const missing = Object.values(config.providers).filter(p => p.wire !== "openai-responses" && p.wire !== "openai-chat").map(p => `${p.name} (${p.wire})`);
+    if (missing.length > 0) console.log(`not served yet in this build: ${missing.join(", ")}`);
     console.log("note: /v1/messages answers 501 until the messages ingress lands.");
   }
   const stop = (): void => {

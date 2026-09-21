@@ -74,6 +74,15 @@ switching back to opencodex, with hosted web search, compaction and
 
 ## Milestone 3: Codex talks to DeepSeek
 
+**Status (2026-09-21): built; end-to-end verified against a real Chat Completions
+upstream.** `src/ingress/responses.ts` (parse + respond), `src/wire/openai-chat.ts`
+(encode + decode + classify) and the IR path in `src/pipeline.ts` are in. Real
+Codex 0.153.4 ran a hello turn and a shell-tool loop (tool call, tool result,
+summary) through modelplug to Kimi K3 over Chat Completions; 70 tests green.
+Still open from the exit criterion below: the DeepSeek run itself (no key on the
+dev machine), `apply_patch` and `view_image` turns against a live model, the
+conformance scenario (step 8), the boundary test, and `check` probes (step 7).
+
 **Goal.** `responses` ingress + `openai-chat` wire + the pipeline that joins
 them. Real Codex completes a multi-step coding task against DeepSeek through
 modelplug.

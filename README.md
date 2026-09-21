@@ -6,9 +6,11 @@ One process, one config file, two ingress protocols, four wire protocols, zero
 writes to your Codex or Claude Code installation. Bring API keys, or log in
 with your ChatGPT subscription. You can read the whole thing in a day.
 
-> Status: pre-alpha. The ChatGPT-subscription passthrough works end to end with
-> real Codex; routed providers (DeepSeek, Anthropic, Gemini, …) are the next
-> milestones and answer a clear error until then.
+> Status: pre-alpha. Two paths work end to end with real Codex: the
+> ChatGPT-subscription passthrough, and routing to any Chat Completions
+> provider (DeepSeek, Kimi, Qwen, GLM, Groq, OpenRouter, Ollama, vLLM, …).
+> Anthropic, Gemini and the Claude Code ingress are the next milestones and
+> answer a clear error until then.
 > See [docs/DESIGN.md](docs/DESIGN.md) and [src/wire/README.md](src/wire/README.md).
 
 ## What it does
@@ -55,8 +57,9 @@ modelplug login chatgpt --import
 MODELPLUG_PRESET=chatgpt modelplug
 modelplug print codex --model gpt-5.5       # paste into ~/.codex/config.toml
 
-# or an API-key provider, no config file needed (routed wires land in later milestones)
+# or an API-key provider, no config file needed
 MODELPLUG_PRESET=deepseek DEEPSEEK_API_KEY=sk-... modelplug
+modelplug print codex --model deepseek-v4    # a provider/model name keeps Codex in its classic dialect
 
 # or a config file for several providers
 modelplug login chatgpt --import   # reuse the login Codex already has

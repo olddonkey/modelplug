@@ -10,7 +10,8 @@ import { DEFAULT_ATTEMPT_POLICY, RouteExhaustedError, runAttempts, type AttemptO
 import type { ResolvedConfig, ResolvedProvider } from "./config.ts";
 import type { ChatgptCredentialProvider, QuotaWindow } from "./credentials/chatgpt.ts";
 import { CredentialError, credentialProviderFor, type Credential, type CredentialDeps, type CredentialProvider } from "./credentials/index.ts";
-import type { ErrorKind, ProviderTarget, Usage, WireError } from "./ir.ts";
+import { IngressError, parseResponsesRequest, respondResponses, type ParsedResponses } from "./ingress/responses.ts";
+import type { ErrorKind, Event, ProviderTarget, ResponseSink, Usage, WireError } from "./ir.ts";
 import { forwardableHeaders, relayBody, relayableHeaders } from "./relay.ts";
 import { RouteError, resolveRoute, type RouteTarget } from "./route.ts";
 import { error as errorBody, sendJson, type BodyHandler, type Handlers } from "./server.ts";
@@ -58,13 +59,24 @@ const ERROR_TYPE: Record<ErrorKind, string> = {
   cancelled: "client_cancelled",
 };
 
-interface PassthroughValue {
-  upstream: Response;
+interface AttemptCommon {
   target: RouteTarget;
   credential: Credential;
   creds: CredentialProvider;
   attempt: number;
 }
+interface PassthroughValue extends AttemptCommon {
+  kind: "passthrough";
+  upstream: Response;
+}
+interface IrValue extends AttemptCommon {
+  kind: "ir";
+  upstream: Response;
+  first: Event;
+  iterator: AsyncIterator<Event>;
+  parsed: ParsedResponses;
+}
+type AttemptValue = PassthroughValue | IrValue;
 
 type Route = "responses" | "compact";
 
@@ -133,7 +145,8 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
       );
     };
 
-    const attempt = async (target: RouteTarget, n: number): Promise<AttemptOutcome<PassthroughValue>> => {
+    let parsedIr: ParsedResponses | undefined;
+    const attempt = async (target: RouteTarget, n: number): Promise<AttemptOutcome<AttemptValue>> => {
       const provider = config.providers[target.provider]!;
       const creds = credentialsFor(provider);
       let credential: Credential;
@@ -150,25 +163,44 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
       };
       if (credential.apiKey !== undefined) providerTarget.apiKey = credential.apiKey;
       const wire = WIRES[provider.wire];
-      if (!wire || provider.wire !== "openai-responses") {
+      if (!wire) {
         return {
           ok: false,
           error: {
             kind: "invalid_request",
-            message: `provider "${provider.name}" uses wire "${provider.wire}", which this build cannot serve yet (routed models arrive in a later milestone)`,
+            message: `provider "${provider.name}" uses wire "${provider.wire}", which this build cannot serve yet (it arrives in a later milestone)`,
             provider: provider.name,
             retryable: false,
           },
         };
       }
 
-      // Same-protocol passthrough: inject headers, relay bytes, read status and headers. No payload rewrites.
-      const headers: Record<string, string> = { ...clientHeaders, "content-type": "application/json", ...providerTarget.headers };
-      if (providerTarget.apiKey) headers.authorization = `Bearer ${providerTarget.apiKey}`;
-      const payload = { ...request, model: target.model };
+      let upstreamUrl: string;
+      let upstreamInit: RequestInit;
+      const passthrough = provider.wire === "openai-responses";
+      if (passthrough) {
+        // Same-protocol passthrough: inject headers, relay bytes, read status and headers. No payload rewrites.
+        const headers: Record<string, string> = { ...clientHeaders, "content-type": "application/json", ...providerTarget.headers };
+        if (providerTarget.apiKey) headers.authorization = `Bearer ${providerTarget.apiKey}`;
+        upstreamUrl = `${providerTarget.baseUrl}${suffix}`;
+        upstreamInit = { method: "POST", headers, body: JSON.stringify({ ...request, model: target.model }), signal: controller.signal };
+      } else {
+        if (route === "compact") {
+          return { ok: false, error: { kind: "invalid_request", message: "compaction for routed providers is not implemented yet", provider: provider.name, retryable: false } };
+        }
+        try {
+          parsedIr ??= parseResponsesRequest(request);
+        } catch (err) {
+          if (err instanceof IngressError) return { ok: false, error: { kind: "invalid_request", message: err.message, provider: "modelplug", retryable: false, status: err.status } };
+          throw err;
+        }
+        const wireRequest = wire.encode({ ...parsedIr.turn, model: target.model }, provider.capabilities, providerTarget, true);
+        upstreamUrl = wireRequest.url;
+        upstreamInit = { method: wireRequest.method, headers: wireRequest.headers, body: wireRequest.body, signal: controller.signal };
+      }
       let upstream: Response;
       try {
-        upstream = await doFetch(`${providerTarget.baseUrl}${suffix}`, { method: "POST", headers, body: JSON.stringify(payload), signal: controller.signal });
+        upstream = await doFetch(upstreamUrl, upstreamInit);
       } catch (err) {
         if (controller.signal.aborted) return { ok: false, error: { kind: "cancelled", message: "client closed the connection", provider: provider.name, retryable: false } };
         const error: WireError = { kind: "network", message: `${providerTarget.baseUrl}: ${err instanceof Error ? err.message : String(err)}`, provider: provider.name, retryable: true };
@@ -186,10 +218,28 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
         if (advice?.retry) adjusted.retryAfterMs = advice.retryAfterMs ?? 0;
         return { ok: false, error: adjusted };
       }
-      return { ok: true, value: { upstream, target, credential, creds, attempt: n } };
+      if (passthrough) return { ok: true, value: { kind: "passthrough", upstream, target, credential, creds, attempt: n } };
+
+      // IR path: peek the first event so a stream that opens with an error can still fail over.
+      const iterator = wire.decode(upstream, provider.capabilities, providerTarget)[Symbol.asyncIterator]();
+      const first = await iterator.next();
+      if (first.done) {
+        const error: WireError = { kind: "upstream", message: "empty upstream stream", provider: provider.name, retryable: true, status: upstream.status };
+        await creds.report(target, credential, { outcome: "error", error, headers: upstream.headers, ...(conversationId ? { conversationId } : {}) });
+        return { ok: false, error };
+      }
+      if (first.value.type === "error") {
+        const error = first.value.error;
+        const advice = await creds.report(target, credential, { outcome: "error", error, headers: upstream.headers, ...(conversationId ? { conversationId } : {}) });
+        logUsage({ target, credential: credential.id, attempt: n, status: "error", kind: error.kind, httpStatus: upstream.status });
+        const adjusted: WireError = { ...error, retryable: error.retryable || advice?.retry === true };
+        if (advice?.retry) adjusted.retryAfterMs = advice.retryAfterMs ?? 0;
+        return { ok: false, error: adjusted };
+      }
+      return { ok: true, value: { kind: "ir", upstream, first: first.value, iterator, parsed: parsedIr!, target, credential, creds, attempt: n } };
     };
 
-    let value: PassthroughValue;
+    let value: AttemptValue;
     try {
       const result = await runAttempts(targets, attempt, policy, { signal: controller.signal, ...(deps.attempt?.sleep ? { sleep: deps.attempt.sleep } : {}) });
       value = result.value;
@@ -211,14 +261,42 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
     }
 
     const { upstream, target, credential, creds, attempt: attemptNumber } = value;
-    res.writeHead(upstream.status, relayableHeaders(upstream.headers));
-    const probe = createUsageProbe(upstream.headers.get("content-type") ?? "");
-    await relayBody(upstream, res, probe.observe);
+    if (value.kind === "passthrough") {
+      res.writeHead(upstream.status, relayableHeaders(upstream.headers));
+      const probe = createUsageProbe(upstream.headers.get("content-type") ?? "");
+      await relayBody(upstream, res, probe.observe);
+      res.off("close", onClose);
+      const usage = probe.result();
+      await creds.report(target, credential, { outcome: "ok", headers: upstream.headers, ...(conversationId ? { conversationId } : {}) });
+      logUsage({ target, credential: credential.id, attempt: attemptNumber, status: "ok", httpStatus: upstream.status, ...(usage ? { usage } : {}) });
+      res.end();
+      return;
+    }
+
+    // IR path: translate events back into the client's protocol.
+    let usage: Usage | undefined;
+    let terminal: Event["type"] | undefined;
+    const { first, iterator } = value;
+    const events = (async function* (): AsyncGenerator<Event> {
+      const observe = (event: Event): Event => {
+        if (event.type === "done") {
+          terminal = "done";
+          usage = event.usage;
+        } else if (event.type === "error") terminal = "error";
+        return event;
+      };
+      yield observe(first);
+      if (first.type === "done" || first.type === "error") return;
+      while (true) {
+        const next = await iterator.next();
+        if (next.done) return;
+        yield observe(next.value);
+      }
+    })();
+    await respondResponses(events, value.parsed, nodeSink(res), { now, errorStatus: kind => ERROR_STATUS[kind] });
     res.off("close", onClose);
-    const usage = probe.result();
     await creds.report(target, credential, { outcome: "ok", headers: upstream.headers, ...(conversationId ? { conversationId } : {}) });
-    logUsage({ target, credential: credential.id, attempt: attemptNumber, status: "ok", httpStatus: upstream.status, ...(usage ? { usage } : {}) });
-    res.end();
+    logUsage({ target, credential: credential.id, attempt: attemptNumber, status: terminal === "error" ? "error" : "ok", httpStatus: upstream.status, ...(usage ? { usage } : {}) });
   };
 
   function statusLines(): string[] {
@@ -249,6 +327,23 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
   return {
     handlers: { responses: responsesHandler("responses"), compact: responsesHandler("compact") },
     statusLines,
+  };
+}
+
+function nodeSink(res: ServerResponse): ResponseSink {
+  res.on("error", () => {
+    /* the client went away mid-write; nothing to add */
+  });
+  return {
+    status(code, headers) {
+      if (!res.headersSent) res.writeHead(code, headers);
+    },
+    write(chunk) {
+      if (!res.destroyed && !res.writableEnded) res.write(chunk);
+    },
+    end() {
+      if (!res.writableEnded) res.end();
+    },
   };
 }
 
