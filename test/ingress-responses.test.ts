@@ -244,6 +244,27 @@ test("respond: a lowered custom tool call is restored as custom_tool_call with t
   const item = (c.events().at(-1)!.data.response as { output: Array<Record<string, unknown>> }).output[0]!;
   assert.equal(item.type, "custom_tool_call");
   assert.equal(item.input, "*** Begin Patch\n*** End Patch");
+  const deltas = c.events().filter(e => e.type === "response.custom_tool_call_input.delta").map(e => e.data.delta as string);
+  assert.deepEqual(deltas, ["*** Begin Patch\n*** End Patch"], "the delta is the raw input, not the JSON envelope");
+
+  // Escapes and surrogate pairs cut across argument chunks stream as raw text and never as half an escape.
+  const input = 'say "hi"\\path\t😀 done';
+  const args = JSON.stringify({ input }).replace("😀", "\\ud83d\\ude00");
+  const pieces = [args.indexOf('\\"') + 1, args.indexOf("\\\\") + 1, args.indexOf("\\ud83d") + 3, args.indexOf("\\ude00") + 2, args.length - 3];
+  const c2 = sinkCollector();
+  const events: Event[] = [{ type: "tool_call_start", id: "c", name: "apply_patch" }];
+  let at = 0;
+  for (const p of [...pieces].sort((a, b) => a - b)) {
+    events.push({ type: "tool_call_delta", id: "c", argumentsDelta: args.slice(at, p) });
+    at = p;
+  }
+  events.push({ type: "tool_call_delta", id: "c", argumentsDelta: args.slice(at) }, { type: "tool_call_end", id: "c" }, { type: "done", stopReason: "tool_use" });
+  await respondResponses(from(events), baseParsed(), c2.sink);
+  const streamed = c2.events().filter(e => e.type === "response.custom_tool_call_input.delta").map(e => e.data.delta as string);
+  assert.equal(streamed.join(""), input);
+  assert.ok(streamed.length >= 3, `expected several deltas, got ${JSON.stringify(streamed)}`);
+  for (const d of streamed) assert.ok(!/^[\udc00-\udfff]|[\ud800-\udbff]$/.test(d), `a delta must not start with a low or end with a high surrogate: ${JSON.stringify(d)}`);
+  assert.equal((c2.events().at(-1)!.data.response as { output: Array<{ input: string }> }).output[0]!.input, input);
 });
 
 test("respond: max_tokens becomes response.incomplete; an error mid-call closes the call without arguments.done and fails", async () => {

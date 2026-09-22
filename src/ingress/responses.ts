@@ -463,6 +463,67 @@ interface OpenCall {
   args: string;
   custom: boolean;
   namespace?: { namespace: string; name: string };
+  /** Custom tools only: progress of decoding the raw input out of the lowered `{"input":"…"}` arguments. */
+  decoded?: { at: number; opened: boolean; closed: boolean };
+}
+
+const SIMPLE_ESCAPES: Record<string, string> = { '"': '"', "\\": "\\", "/": "/", b: "\b", f: "\f", n: "\n", r: "\r", t: "\t" };
+
+/**
+ * Decode as much of the lowered arguments as has arrived and return the newly
+ * decoded raw input text, so `custom_tool_call_input.delta` carries the tool's
+ * input the way the native backend streams it, not JSON. An escape that is
+ * still incomplete, or a high surrogate without its pair, waits for more bytes.
+ * The final `input` comes from a full JSON.parse at `tool_call_end`.
+ */
+function decodeCustomInputProgress(call: OpenCall): string {
+  const state = (call.decoded ??= { at: 0, opened: false, closed: false });
+  if (state.closed) return "";
+  const args = call.args;
+  if (!state.opened) {
+    const match = /"input"\s*:\s*"/.exec(args);
+    if (!match) return "";
+    state.opened = true;
+    state.at = match.index + match[0].length;
+  }
+  let out = "";
+  let i = state.at;
+  while (i < args.length) {
+    const ch = args[i]!;
+    if (ch === '"') {
+      state.closed = true;
+      i++;
+      break;
+    }
+    if (ch !== "\\") {
+      out += ch;
+      i++;
+      continue;
+    }
+    const next = args[i + 1];
+    if (next === undefined) break;
+    if (next === "u") {
+      const hex = args.slice(i + 2, i + 6);
+      if (!/^[0-9a-fA-F]{4}$/.test(hex)) break;
+      const code = parseInt(hex, 16);
+      if (code >= 0xd800 && code <= 0xdbff) {
+        const low = args.slice(i + 6, i + 12);
+        if (!/^\\u[0-9a-fA-F]{4}$/.test(low)) break;
+        out += String.fromCharCode(code, parseInt(low.slice(2), 16));
+        i += 12;
+      } else {
+        out += String.fromCharCode(code);
+        i += 6;
+      }
+      continue;
+    }
+    const mapped = SIMPLE_ESCAPES[next];
+    if (mapped === undefined) break;
+    out += mapped;
+    i += 2;
+  }
+  state.at = i;
+  return out;
 }
 
 const uid = (prefix: string): string => `${prefix}_${randomBytes(12).toString("hex")}`;
@@ -658,8 +719,10 @@ export async function respondResponses(events: AsyncIterable<Event>, parsed: Par
         const call = calls.get(event.id);
         if (!call) break;
         call.args += event.argumentsDelta;
-        if (call.custom) emit("response.custom_tool_call_input.delta", { item_id: call.itemId, output_index: call.index, delta: event.argumentsDelta });
-        else emit("response.function_call_arguments.delta", { item_id: call.itemId, output_index: call.index, delta: event.argumentsDelta });
+        if (call.custom) {
+          const text = decodeCustomInputProgress(call);
+          if (text) emit("response.custom_tool_call_input.delta", { item_id: call.itemId, output_index: call.index, delta: text });
+        } else emit("response.function_call_arguments.delta", { item_id: call.itemId, output_index: call.index, delta: event.argumentsDelta });
         break;
       }
       case "tool_call_end": {
