@@ -5,6 +5,7 @@ import { defaultCodexAuthPath, importCodexAuth, tokenExpiresAt } from "./credent
 import { CredentialError } from "./credentials/index.ts";
 import { CredentialStoreError, defaultCredentialStorePath, loadCredentialStore, saveCredentialStore } from "./credentials/store.ts";
 import { createPipeline } from "./pipeline.ts";
+import { describeProbe, discoveredModels, probeProviders, type ProbeResult } from "./probe.ts";
 import { createRecorder, forwardHandler, withRecording } from "./record.ts";
 import { RouteError, resolveRoute } from "./route.ts";
 import { createServer, notImplementedHandler, ROUTE_PATHS, type Handlers } from "./server.ts";
@@ -20,7 +21,7 @@ Usage:
       --forward <baseUrl> [--forward-header k=v]...  relay raw requests to a real upstream
                                                      (key from MODELPLUG_FORWARD_KEY)
       --forward-model <name>                         rename the model in forwarded bodies
-  modelplug check   [--config <file>]                validate config, show providers and aliases
+  modelplug check   [--config <file>] [--offline]    validate config, probe every provider, show aliases
   modelplug models  [--config <file>]                list provider/model ids and aliases
   modelplug print codex|claude [--model <ref>]       print the client-side snippet to paste
   modelplug presets                                  list built-in presets
@@ -47,6 +48,7 @@ export async function main(argv: string[]): Promise<void> {
       "forward-header": { type: "string", multiple: true },
       "forward-model": { type: "string" },
       import: { type: "boolean" },
+      offline: { type: "boolean" },
       from: { type: "string" },
       help: { type: "boolean", short: "h" },
       version: { type: "boolean", short: "v" },
@@ -66,7 +68,7 @@ export async function main(argv: string[]): Promise<void> {
           forwardModel: values["forward-model"],
         });
       case "check":
-        return check(loadConfig(values.config));
+        return await check(loadConfig(values.config), values.offline === true);
       case "models":
         return models(loadConfig(values.config));
       case "print":
@@ -123,10 +125,22 @@ async function start(config: ResolvedConfig, portFlag: string | undefined, optio
     handlers = { responses: forward, compact: forward, messages: forward };
   }
   let statusLines: (() => string[]) | undefined;
+  let discovered: Record<string, string[]> = {};
+  let probe: (() => void) | undefined;
   if (!options.forward) {
     const pipeline = createPipeline(config, { log: console.error });
     handlers = { ...pipeline.handlers, ...handlers };
     statusLines = pipeline.statusLines;
+    // Learn model ids for /v1/models in the background; a failure here is a log line, never a refusal.
+    probe = () => {
+      probeProviders(config, { credentialProvider: pipeline.credentialProvider })
+        .then(results => {
+          discovered = discoveredModels(results);
+          const summary = results.map(r => `${r.provider} ${r.state === "reachable" ? r.detail : describeProbe(r)}`).join("; ");
+          console.log(`probed: ${summary}`);
+        })
+        .catch(err => console.error(`probe failed: ${err instanceof Error ? err.message : String(err)}`));
+    };
   }
   if (options.record) {
     const recorder = createRecorder(options.record);
@@ -134,7 +148,7 @@ async function start(config: ResolvedConfig, portFlag: string | undefined, optio
       handlers[route] = withRecording(recorder, route, handlers[route] ?? notImplementedHandler(ROUTE_PATHS[route]));
     }
   }
-  const server = createServer(config, handlers, VERSION, statusLines ? { statusLines } : {});
+  const server = createServer(config, handlers, VERSION, { ...(statusLines ? { statusLines } : {}), discoveredModels: () => discovered });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, config.host, () => resolve());
@@ -151,6 +165,7 @@ async function start(config: ResolvedConfig, portFlag: string | undefined, optio
     if (missing.length > 0) console.log(`not served yet in this build: ${missing.join(", ")}`);
     console.log("note: /v1/messages answers 501 until the messages ingress lands.");
   }
+  probe?.();
   const stop = (): void => {
     server.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 2_000).unref();
@@ -159,10 +174,13 @@ async function start(config: ResolvedConfig, portFlag: string | undefined, optio
   process.once("SIGTERM", stop);
 }
 
-function check(config: ResolvedConfig): void {
+async function check(config: ResolvedConfig, offline: boolean): Promise<void> {
   console.log(`config: ${config.source}`);
   console.log(`listen: ${config.host}:${config.port}\n`);
+  const probes = new Map<string, ProbeResult>();
+  if (!offline) for (const r of await probeProviders(config)) probes.set(r.provider, r);
   console.log("providers:");
+  let failed = false;
   for (const p of Object.values(config.providers)) {
     const caps = p.capabilities;
     const capsText = [
@@ -175,8 +193,12 @@ function check(config: ResolvedConfig): void {
     console.log(`  ${p.name.padEnd(14)} ${p.wire.padEnd(17)} ${p.baseUrl}`);
     const cred = p.credential === "chatgpt" ? `chatgpt accounts=${chatgptAccountCount()}` : `api-key key=${p.apiKey ? "set" : "none"}`;
     console.log(`  ${"".padEnd(14)} ${cred}${p.preset ? ` preset=${p.preset}` : ""} ${capsText}`);
+    const probe = probes.get(p.name);
+    if (probe) {
+      if (probe.state === "auth_failed" || probe.state === "unreachable" || probe.state === "no_credential") failed = true;
+      console.log(`  ${"".padEnd(14)} network: ${describeProbe(probe)}`);
+    }
   }
-  let failed = false;
   if (Object.keys(config.aliases).length > 0) {
     console.log("\naliases:");
     for (const alias of Object.keys(config.aliases)) {
@@ -189,7 +211,7 @@ function check(config: ResolvedConfig): void {
       }
     }
   }
-  console.log(failed ? "\ncheck failed" : "\nok (network probes arrive with the wire modules)");
+  console.log(failed ? "\ncheck failed" : offline ? "\nok (offline: providers not probed)" : "\nok");
   if (failed) process.exitCode = 1;
 }
 

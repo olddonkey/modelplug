@@ -22,6 +22,9 @@ Implement `Wire` from `../ir.ts`:
 - `classifyError(status, headers, bodyText, target)` is the only place that
   reads upstream error text. Return a `WireError` with `retryable` set
   honestly; the attempt loop will not second-guess it.
+- `modelsRequest(target)` and `parseModels(body)` are optional: the GET that
+  lists models and how to read its answer. `check` and `/v1/models` use them;
+  nothing on the request path does.
 
 ## Rules
 

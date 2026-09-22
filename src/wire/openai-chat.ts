@@ -7,6 +7,7 @@ import { randomBytes } from "node:crypto";
 import type { AssistantMessage, Capabilities, Event, Message, ProviderTarget, ReasoningEffort, ToolMessage, Turn, Usage, UserMessage, Wire, WireError, WireRequest } from "../ir.ts";
 import { decodeNdjson, decodeSse } from "../sse.ts";
 import { classifyOpenAiError } from "./openai-errors.ts";
+import { openaiModelsRequest, parseOpenaiModels } from "./openai-models.ts";
 
 const EFFORT_ORDER: ReasoningEffort[] = ["minimal", "low", "medium", "high", "max"];
 
@@ -241,4 +242,6 @@ export const openaiChatWire: Wire = {
   classifyError(status: number, headers: Headers, bodyText: string, target: ProviderTarget): WireError {
     return classifyOpenAiError(status, headers, bodyText, target.name);
   },
+  modelsRequest: openaiModelsRequest,
+  parseModels: parseOpenaiModels,
 };

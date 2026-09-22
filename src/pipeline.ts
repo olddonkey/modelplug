@@ -29,6 +29,8 @@ export interface Pipeline {
   handlers: Handlers;
   /** Human-readable account and quota lines for the `/` status page. */
   statusLines(): string[];
+  /** The one credential provider per configured provider; probes reuse it so quota headers land on the status page. */
+  credentialProvider(provider: ResolvedProvider): CredentialProvider;
 }
 
 const ERROR_STATUS: Record<ErrorKind, number> = {
@@ -312,6 +314,7 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
   return {
     handlers: { responses: responsesHandler("responses"), compact: responsesHandler("compact") },
     statusLines,
+    credentialProvider: credentialsFor,
   };
 }
 

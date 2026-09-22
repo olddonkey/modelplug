@@ -15,6 +15,8 @@ const MAX_BODY_BYTES = 32 * 1024 * 1024;
 export interface ServerOptions {
   /** Extra lines for the `/` status page, e.g. accounts and quota. */
   statusLines?: () => string[];
+  /** Model ids learned from the network, per provider, for providers that configure none. */
+  discoveredModels?: () => Record<string, string[]>;
 }
 
 export function createServer(config: ResolvedConfig, handlers: Handlers, version: string, options: ServerOptions = {}): Server {
@@ -50,7 +52,7 @@ async function handle(
     return;
   }
   if (path === "/v1/models" && method === "GET") {
-    return sendJson(res, 200, modelList(config));
+    return sendJson(res, 200, modelList(config, options.discoveredModels?.() ?? {}));
   }
 
   const route = ROUTES[path];
@@ -120,10 +122,11 @@ async function readJsonBody(req: IncomingMessage): Promise<unknown> {
   }
 }
 
-export function modelList(config: ResolvedConfig): { object: "list"; data: Array<{ id: string; object: "model"; owned_by: string }> } {
+export function modelList(config: ResolvedConfig, discovered: Record<string, string[]> = {}): { object: "list"; data: Array<{ id: string; object: "model"; owned_by: string }> } {
   const data: Array<{ id: string; object: "model"; owned_by: string }> = [];
   for (const provider of Object.values(config.providers)) {
-    for (const model of provider.models) data.push({ id: `${provider.name}/${model}`, object: "model", owned_by: provider.name });
+    const models = provider.models.length > 0 ? provider.models : (discovered[provider.name] ?? []);
+    for (const model of models) data.push({ id: `${provider.name}/${model}`, object: "model", owned_by: provider.name });
   }
   for (const alias of Object.keys(config.aliases)) data.push({ id: alias, object: "model", owned_by: "alias" });
   return { object: "list", data };

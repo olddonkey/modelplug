@@ -5,6 +5,7 @@
  */
 import type { Capabilities, ProviderTarget, Turn, Wire, WireError, WireRequest, Event } from "../ir.ts";
 import { classifyOpenAiError } from "./openai-errors.ts";
+import { openaiModelsRequest, parseOpenaiModels } from "./openai-models.ts";
 
 export { retryAfterMsFrom, upstreamErrorMessage } from "./openai-errors.ts";
 export const classifyResponsesError = classifyOpenAiError;
@@ -23,4 +24,6 @@ export const openaiResponsesWire: Wire = {
   classifyError(status: number, headers: Headers, bodyText: string, target: ProviderTarget): WireError {
     return classifyOpenAiError(status, headers, bodyText, target.name);
   },
+  modelsRequest: openaiModelsRequest,
+  parseModels: parseOpenaiModels,
 };
