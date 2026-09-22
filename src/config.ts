@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { CREDENTIAL_KINDS, type CredentialKind } from "./credentials/kinds.ts";
+import { ACCOUNT_STRATEGIES, CREDENTIAL_KINDS, type AccountStrategy, type CredentialKind } from "./credentials/kinds.ts";
 import type { Capabilities, WireName } from "./ir.ts";
 
 export const WIRES = ["openai-chat", "openai-responses", "anthropic", "gemini"] as const;
@@ -40,6 +40,8 @@ const providerSchema = z.strictObject({
   headers: z.record(z.string(), z.string()).optional(),
   preset: z.string().optional(),
   credential: z.enum(CREDENTIAL_KINDS).optional(),
+  /** Pools only: how an account is picked for a new conversation. */
+  strategy: z.enum(ACCOUNT_STRATEGIES).optional(),
   models: z.array(z.string().min(1)).optional(),
   capabilities: capabilitiesSchema.partial().optional(),
 });
@@ -66,6 +68,7 @@ export interface ResolvedProvider {
   headers: Record<string, string>;
   preset?: string;
   credential: CredentialKind;
+  strategy?: AccountStrategy;
   models: string[];
   capabilities: Capabilities;
 }
@@ -201,6 +204,7 @@ export function resolveConfig(config: Config, source: string): ResolvedConfig {
     };
     if (p.apiKey !== undefined && p.apiKey !== "") resolved.apiKey = p.apiKey;
     if (p.preset !== undefined) resolved.preset = p.preset;
+    if (p.strategy !== undefined) resolved.strategy = p.strategy;
     providers[name] = resolved;
   }
 

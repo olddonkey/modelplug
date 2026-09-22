@@ -93,7 +93,7 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
   const credentialsFor = (provider: ResolvedProvider): CredentialProvider => {
     let existing = credentials.get(provider.name);
     if (!existing) {
-      existing = credentialProviderFor(provider, deps);
+      existing = credentialProviderFor(provider, { ...deps, log });
       credentials.set(provider.name, existing);
     }
     return existing;

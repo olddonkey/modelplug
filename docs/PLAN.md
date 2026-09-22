@@ -456,6 +456,27 @@ Exit: with two accounts and a fake upstream that exhausts one of them
 mid-session, conversations continue on the other with no client-visible error,
 and a conversation stays on its account until that account is exhausted.
 
+**Status (2026-09-22): built against fakes; the exit criterion passes end to
+end in `test/pool.test.ts`.** `src/credentials/chatgpt.ts` is the pool:
+`strategy` per provider (`lowest-usage` default, scoring the busiest quota
+window and treating a window whose reset time has passed as empty;
+`round-robin`; `fill-first`), a pinned account (`account use <id>`, `use auto`
+to unpin) that beats both, conversation affinity with a one-hour sliding TTL,
+usage-limit cooldowns until the exhausted window's reset (else the nearest
+reset, else 15 minutes, clamped to 30 s … 7 d), a 401 that refreshes once and
+on repeat marks the account `needsLogin` and rotates, and a rejected refresh
+that rotates instead of failing the request. `src/credentials/chatgpt-login.ts`
+is the PKCE flow with Codex's client id, callback on 1455 (both address
+families; a busy port is refused), state check, ten-minute timeout, and the
+same claim parsing as the import. Import no longer pins the first account.
+89 tests green.
+
+Open, both needing a real session: one live `login chatgpt` run to confirm the
+authorize parameters (they mirror Codex's), and item 4's third clause: the 400
+the backend returns when a transcript carries reasoning minted by another
+account has not been recorded, so no code strips reasoning items yet. Record it
+with two accounts first; it is one named function with one fixture when it lands.
+
 ## Milestone 5: `anthropic` wire
 
 Forces the `Opaque` design. Scope: system as top-level `system`; `thinking`

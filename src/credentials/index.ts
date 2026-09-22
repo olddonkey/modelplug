@@ -64,6 +64,7 @@ export interface CredentialDeps {
   fetch?: typeof fetch;
   now?: () => number;
   tokenUrl?: string;
+  log?: (message: string) => void;
 }
 
 export function credentialProviderFor(provider: ResolvedProvider, deps: CredentialDeps = {}): CredentialProvider {

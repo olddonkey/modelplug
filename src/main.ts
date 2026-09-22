@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { ConfigError, loadConfig, loadPresets, type ResolvedConfig } from "./config.ts";
-import { defaultCodexAuthPath, importCodexAuth, tokenExpiresAt } from "./credentials/chatgpt.ts";
+import { defaultCodexAuthPath, importCodexAuth, tokenExpiresAt, upsertAccount } from "./credentials/chatgpt.ts";
+import { loginChatgpt } from "./credentials/chatgpt-login.ts";
 import { CredentialError } from "./credentials/index.ts";
 import { CredentialStoreError, defaultCredentialStorePath, loadCredentialStore, saveCredentialStore } from "./credentials/store.ts";
 import { createPipeline } from "./pipeline.ts";
@@ -25,10 +26,11 @@ Usage:
   modelplug models  [--config <file>]                list provider/model ids and aliases
   modelplug print codex|claude [--model <ref>]       print the client-side snippet to paste
   modelplug presets                                  list built-in presets
+  modelplug login chatgpt                            log in through the browser; repeat to add accounts
   modelplug login chatgpt --import [--from <auth.json>]
                                                       reuse the login Codex already has (read-only)
   modelplug logout chatgpt                           forget every ChatGPT account
-  modelplug account list|use <id>|remove <id>        manage ChatGPT accounts
+  modelplug account list|use <id>|auto|remove <id>   list, pin one, let the strategy pick, or forget
 
 Config is read from --config, $MODELPLUG_CONFIG, ./modelplug.json, or
 ~/.config/modelplug/config.json. With no file, MODELPLUG_PRESET (plus
@@ -76,7 +78,7 @@ export async function main(argv: string[]): Promise<void> {
       case "presets":
         return presets();
       case "login":
-        return login(positionals[1], values.import === true, values.from);
+        return await login(positionals[1], values.import === true, values.from);
       case "logout":
         return logout(positionals[1]);
       case "account":
@@ -267,26 +269,29 @@ const POLICY_NOTE = `Provider policy: using ChatGPT accounts through modelplug i
 protection from provider rate limits, enforcement, or account actions, and you are responsible
 for complying with OpenAI's terms.`;
 
-function login(provider: string | undefined, doImport: boolean, from: string | undefined): void {
+async function login(provider: string | undefined, doImport: boolean, from: string | undefined): Promise<void> {
   if (provider !== "chatgpt") throw new ConfigError("login supports one provider today: chatgpt");
-  if (!doImport) {
-    console.error("Browser login arrives with the account pool milestone. Today:\n  modelplug login chatgpt --import   (reuses the login Codex already has, read-only)");
-    process.exitCode = 2;
-    return;
-  }
-  const authPath = from ?? defaultCodexAuthPath();
-  const account = importCodexAuth(authPath);
   const storePath = defaultCredentialStorePath();
   const store = loadCredentialStore(storePath);
-  const index = store.chatgpt.accounts.findIndex(a => a.id === account.id);
-  if (index >= 0) store.chatgpt.accounts[index] = account;
-  else store.chatgpt.accounts.push(account);
-  if (store.chatgpt.accounts.length === 1) store.chatgpt.active = account.id;
+  let account;
+  let origin: string;
+  if (doImport) {
+    const authPath = from ?? defaultCodexAuthPath();
+    account = importCodexAuth(authPath);
+    origin = `imported from ${authPath}`;
+  } else {
+    account = await loginChatgpt({ log: console.log });
+    origin = "logged in";
+  }
+  upsertAccount(store, account);
   saveCredentialStore(storePath, store);
   const expires = tokenExpiresAt(account.accessToken);
-  console.log(`imported ${account.email ?? account.id}${account.planType ? ` (${account.planType})` : ""} from ${authPath}`);
+  console.log(`${origin}: ${account.email ?? account.id}${account.planType ? ` (${account.planType})` : ""}`);
   console.log(`stored in ${storePath} (mode 0600)${expires ? `; access token expires ${new Date(expires).toISOString()}, refreshed automatically` : ""}`);
-  console.log(`\nNext: put this in your config and start the proxy\n  { "providers": { "chatgpt": { "preset": "chatgpt" } }, "defaultProvider": "chatgpt" }\nor simply:  MODELPLUG_PRESET=chatgpt modelplug\nthen:       modelplug print codex --model gpt-5.5\n\n${POLICY_NOTE}`);
+  const count = store.chatgpt.accounts.length;
+  if (count > 1) console.log(`${count} accounts in the pool; new conversations pick one by the provider's strategy (lowest-usage unless configured). Pin one with: modelplug account use <id>`);
+  else console.log(`\nNext: put this in your config and start the proxy\n  { "providers": { "chatgpt": { "preset": "chatgpt" } }, "defaultProvider": "chatgpt" }\nor simply:  MODELPLUG_PRESET=chatgpt modelplug\nthen:       modelplug print codex --model gpt-5.5`);
+  console.log(`\n${POLICY_NOTE}`);
 }
 
 function logout(provider: string | undefined): void {
@@ -312,17 +317,24 @@ function account(sub: string | undefined, id: string | undefined): void {
       }
       for (const a of store.chatgpt.accounts) {
         const expires = tokenExpiresAt(a.accessToken);
-        const marks = [a.id === store.chatgpt.active ? "active" : "", a.needsLogin ? "NEEDS LOGIN" : ""].filter(Boolean).join(", ");
+        const marks = [a.id === store.chatgpt.active ? "pinned" : "", a.needsLogin ? "NEEDS LOGIN" : ""].filter(Boolean).join(", ");
         console.log(`${a.id}  ${a.email ?? "-"}  ${a.planType ?? "-"}  ${a.source}  token ${expires ? (expires < Date.now() ? "expired" : `valid until ${new Date(expires).toISOString()}`) : "no expiry"}${marks ? `  [${marks}]` : ""}`);
       }
-      console.log("\nquota is shown on the proxy's status page while it runs (http://127.0.0.1:<port>/)");
+      console.log(store.chatgpt.active ? "\nevery request goes to the pinned account while it is usable; `modelplug account use auto` lets the strategy pick" : "\nnew conversations pick an account by the provider's strategy (lowest-usage unless configured)");
+      console.log("quota and cooldowns are shown on the proxy's status page while it runs (http://127.0.0.1:<port>/)");
       return;
     }
     case "use": {
-      if (!id || !store.chatgpt.accounts.some(a => a.id === id)) throw new ConfigError(`account use needs an id from \`modelplug account list\``);
+      if (id === "auto") {
+        delete store.chatgpt.active;
+        saveCredentialStore(storePath, store);
+        console.log("no account pinned; the strategy picks");
+        return;
+      }
+      if (!id || !store.chatgpt.accounts.some(a => a.id === id)) throw new ConfigError(`account use needs an id from \`modelplug account list\`, or "auto"`);
       store.chatgpt.active = id;
       saveCredentialStore(storePath, store);
-      console.log(`active account: ${id}`);
+      console.log(`pinned account: ${id}`);
       return;
     }
     case "remove": {
@@ -335,7 +347,7 @@ function account(sub: string | undefined, id: string | undefined): void {
       return;
     }
     default:
-      throw new ConfigError("account needs: list | use <id> | remove <id>");
+      throw new ConfigError("account needs: list | use <id> | use auto | remove <id>");
   }
 }
 

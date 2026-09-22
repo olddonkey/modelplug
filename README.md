@@ -55,6 +55,7 @@ npm install -g modelplug
 
 # ChatGPT subscription: reuse the login Codex already has, then run
 modelplug login chatgpt --import
+modelplug login chatgpt                     # or log in through the browser; repeat to pool several accounts
 MODELPLUG_PRESET=chatgpt modelplug
 modelplug print codex --model gpt-5.5       # paste into ~/.codex/config.toml
 
@@ -88,6 +89,16 @@ Models are addressed as `provider/model`. An alias whose value is a list is
 tried in order until one target answers. A bare OpenAI model name with
 `defaultProvider: "chatgpt"` keeps Codex's native dialect; the reasons are in
 [docs/CLIENTS.md](docs/CLIENTS.md).
+
+Several ChatGPT accounts form a pool: run `modelplug login chatgpt` once per
+account. A new conversation picks an account by the provider's `strategy`
+(`lowest-usage` from the quota headers, the default; `round-robin`;
+`fill-first`) and stays on it for an hour after its last request. An account
+that hits its usage limit cools down until its window resets and the
+conversation carries on with another one, with no error reaching the client.
+`modelplug account use <id>` pins one account; `account use auto` unpins.
+Quota and cooldowns are on the status page at `/`. Nothing about the pool is
+persisted except the tokens.
 
 ## Design in one paragraph
 
