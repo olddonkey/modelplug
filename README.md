@@ -9,9 +9,10 @@ with your ChatGPT subscription. You can read the whole thing in a day.
 > Status: pre-alpha. Two paths work end to end with real Codex: the
 > ChatGPT-subscription passthrough, and routing to any Chat Completions
 > provider (DeepSeek, Kimi, Qwen, GLM, Groq, OpenRouter, Ollama, vLLM, …).
-> Anthropic, Gemini and the Claude Code ingress are the next milestones and
-> answer a clear error until then.
-> See [docs/DESIGN.md](docs/DESIGN.md) and [src/wire/README.md](src/wire/README.md).
+> `modelplug check` probes every provider. Anthropic, Gemini and the Claude
+> Code ingress are the next milestones and answer a clear error until then.
+> Client setup: [docs/CLIENTS.md](docs/CLIENTS.md). Design:
+> [docs/DESIGN.md](docs/DESIGN.md), [src/wire/README.md](src/wire/README.md).
 
 ## What it does
 
@@ -63,7 +64,7 @@ modelplug print codex --model deepseek-v4    # a provider/model name keeps Codex
 
 # or a config file for several providers
 modelplug login chatgpt --import   # reuse the login Codex already has
-modelplug check            # validate config, show resolved providers and aliases
+modelplug check            # validate config, probe every provider, expand aliases
 modelplug print codex      # snippet to paste into ~/.codex/config.toml
 modelplug print claude     # environment variables for Claude Code
 ```
@@ -84,7 +85,9 @@ modelplug print claude     # environment variables for Claude Code
 ```
 
 Models are addressed as `provider/model`. An alias whose value is a list is
-tried in order until one target answers.
+tried in order until one target answers. A bare OpenAI model name with
+`defaultProvider: "chatgpt"` keeps Codex's native dialect; the reasons are in
+[docs/CLIENTS.md](docs/CLIENTS.md).
 
 ## Design in one paragraph
 

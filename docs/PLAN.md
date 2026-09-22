@@ -9,8 +9,10 @@ Working rules for every milestone:
 
 - Every provider quirk lands as a fixture first, code second. The fixture name
   says what breaks without it.
-- No provider name outside `src/wire/<name>.ts` and `src/presets.json`.
-  A test greps for preset names to enforce it.
+- No provider name outside `src/wire/<name>.ts`, `src/credentials/` and
+  `src/presets.json`. `test/boundary.test.ts` greps every string literal for
+  preset and vendor names to enforce it; the CLI's help text and the
+  `--forward` tooling are the only other exemptions.
 - Nothing from the non-goals list in `DESIGN.md`, however small it looks.
 - One PR per step below. CI green before merge.
 
@@ -74,14 +76,24 @@ switching back to opencodex, with hosted web search, compaction and
 
 ## Milestone 3: Codex talks to DeepSeek
 
-**Status (2026-09-21): built; end-to-end verified against a real Chat Completions
-upstream.** `src/ingress/responses.ts` (parse + respond), `src/wire/openai-chat.ts`
+**Status (2026-09-22): built; steps 0 to 8 done, step 9 docs done.**
+`src/ingress/responses.ts` (parse + respond), `src/wire/openai-chat.ts`
 (encode + decode + classify) and the IR path in `src/pipeline.ts` are in. Real
 Codex 0.153.4 ran a hello turn and a shell-tool loop (tool call, tool result,
-summary) through modelplug to Kimi K3 over Chat Completions; 70 tests green.
-Still open from the exit criterion below: the DeepSeek run itself (no key on the
-dev machine), `apply_patch` and `view_image` turns against a live model, the
-conformance scenario (step 8), the boundary test, and `check` probes (step 7).
+summary) through modelplug to Kimi K3 over Chat Completions. Since then:
+`check` probes every provider and `/v1/models` fills from the network (step 7);
+the conformance scenario and the boundary test are in and green (step 8), and
+making the boundary test pass moved the last provider knowledge out of the
+kernel (no per-wire default base URLs; credential kinds report their own status
+lines); `custom_tool_call_input.delta` now streams raw input text like the
+native backend, decoded progressively out of the lowered arguments;
+`docs/CLIENTS.md` is written. 77 tests green.
+
+Still open from the exit criterion below, all needing live keys: the DeepSeek
+and Kimi acceptance runs with `apply_patch` and `view_image` turns, the two
+step-4 decisions (`reasoning_content` replay, `max_tokens` naming), and the
+step-5 golden fixtures recorded from real APIs (the decode tests use inline
+synthetic frames until then).
 
 **Goal.** `responses` ingress + `openai-chat` wire + the pipeline that joins
 them. Real Codex completes a multi-step coding task against DeepSeek through
