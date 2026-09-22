@@ -219,6 +219,20 @@ export function chatgptCredentials(provider: ResolvedProvider, deps: ChatgptDeps
     kind: "chatgpt",
     accounts: () => loadCredentialStore(deps.storePath).chatgpt.accounts,
     quota: () => quota,
+    status(): string[] {
+      let accounts: ChatgptAccount[];
+      try {
+        accounts = loadCredentialStore(deps.storePath).chatgpt.accounts;
+      } catch (err) {
+        return [err instanceof Error ? err.message : String(err)];
+      }
+      if (accounts.length === 0) return ["no ChatGPT account (run: modelplug login chatgpt --import)"];
+      return accounts.map(account => {
+        const snapshot = quota.get(account.id);
+        const who = `${account.email ?? account.id}${account.planType ? ` (${account.planType})` : ""}${account.needsLogin ? "  NEEDS LOGIN" : ""}`;
+        return `${who}  ${describeWindow("primary", snapshot?.primary, now())}  ${describeWindow("secondary", snapshot?.secondary, now())}`;
+      });
+    },
     async resolve(_target: RouteTarget, _attempt: number): Promise<Credential> {
       let account = pick(loadCredentialStore(deps.storePath));
       const expiresAt = tokenExpiresAt(account.accessToken);
@@ -246,4 +260,19 @@ export function chatgptCredentials(provider: ResolvedProvider, deps: ChatgptDeps
       return { retry: false };
     },
   };
+}
+
+function describeWindow(fallback: string, window: QuotaWindow | undefined, now: number): string {
+  const label = window?.windowMinutes === 300 ? "5h" : window?.windowMinutes === 10080 ? "weekly" : window?.windowMinutes ? `${window.windowMinutes}m` : fallback;
+  if (!window || window.usedPercent === undefined) return `${label}: n/a`;
+  const reset = window.resetAt !== undefined ? `, resets in ${formatDuration(window.resetAt - now)}` : "";
+  return `${label}: ${window.usedPercent}% used${reset}`;
+}
+
+function formatDuration(ms: number): string {
+  const minutes = Math.max(0, Math.round(ms / 60_000));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`;
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }

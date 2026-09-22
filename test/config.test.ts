@@ -14,10 +14,11 @@ test("preset supplies wire, baseUrl and capabilities; user overrides win", () =>
   assert.equal(ds.capabilities.images, true);
 });
 
-test("wire without baseUrl only works where the wire has a default", () => {
-  const ok = parseConfig({ providers: { a: { wire: "anthropic", apiKey: "k" } } }, "test");
-  assert.equal(ok.providers.a!.baseUrl, "https://api.anthropic.com");
+test("a wire alone has no base URL; the error names the presets that set one", () => {
+  assert.throws(() => parseConfig({ providers: { a: { wire: "anthropic", apiKey: "k" } } }, "test"), /baseUrl.*required.*preset.*anthropic/);
   assert.throws(() => parseConfig({ providers: { l: { wire: "openai-chat" } } }, "test"), /baseUrl.*required/);
+  const ok = parseConfig({ providers: { a: { preset: "anthropic", apiKey: "k" } } }, "test");
+  assert.equal(ok.providers.a!.baseUrl, "https://api.anthropic.com");
 });
 
 test("trailing slash is stripped and non-http rejected", () => {

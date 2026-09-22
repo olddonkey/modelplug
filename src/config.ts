@@ -88,12 +88,6 @@ export class ConfigError extends Error {
   }
 }
 
-const WIRE_DEFAULT_BASE_URL: Partial<Record<WireName, string>> = {
-  "openai-responses": "https://api.openai.com/v1",
-  anthropic: "https://api.anthropic.com",
-  gemini: "https://generativelanguage.googleapis.com",
-};
-
 const WIRE_DEFAULT_CAPABILITIES: Record<WireName, Capabilities> = {
   "openai-chat": { reasoning: "none", tools: true, images: true, temperature: true, stream: "sse" },
   "openai-responses": {
@@ -177,9 +171,10 @@ export function resolveConfig(config: Config, source: string): ResolvedConfig {
       problems.push(`provider "${name}": wire "${p.wire}" conflicts with preset "${p.preset}" (${preset.wire})`);
       continue;
     }
-    const baseUrl = stripTrailingSlash(p.baseUrl ?? preset?.baseUrl ?? WIRE_DEFAULT_BASE_URL[wire]);
+    const baseUrl = stripTrailingSlash(p.baseUrl ?? preset?.baseUrl);
     if (!baseUrl) {
-      problems.push(`provider "${name}": "baseUrl" is required for wire "${wire}"`);
+      const withUrl = Object.entries(presets).filter(([, v]) => v.wire === wire && v.baseUrl).map(([k]) => k);
+      problems.push(`provider "${name}": "baseUrl" is required for wire "${wire}"${withUrl.length > 0 ? ` (or use a preset that sets it: ${withUrl.join(", ")})` : ""}`);
       continue;
     }
     if (!/^https?:\/\//.test(baseUrl)) {
@@ -256,7 +251,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config | un
     provider.wire = wire as WireName;
   }
   if (env.MODELPLUG_BASE_URL) provider.baseUrl = env.MODELPLUG_BASE_URL;
-  const key = env.MODELPLUG_API_KEY ?? (preset ? env[`${preset.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`] : undefined);
+  const key = env.MODELPLUG_API_KEY ?? (preset ? env[apiKeyEnvName(preset)] : undefined);
   if (key) provider.apiKey = key;
   const raw: Record<string, unknown> = { providers: { default: provider }, defaultProvider: "default" };
   if (env.MODELPLUG_PORT) raw.port = Number(env.MODELPLUG_PORT);
@@ -283,10 +278,16 @@ export function loadConfig(explicitPath?: string, env: NodeJS.ProcessEnv = proce
   }
   const fromEnv = configFromEnv(env);
   if (fromEnv) return resolveConfig(fromEnv, "environment");
+  const example = Object.entries(loadPresets()).find(([, p]) => (p.credential ?? "api-key") === "api-key")?.[0] ?? "<preset>";
   throw new ConfigError(
     `no config found. Looked for:\n  - ${candidates.join("\n  - ")}\n` +
-      `or set MODELPLUG_PRESET (for example MODELPLUG_PRESET=deepseek DEEPSEEK_API_KEY=...).`,
+      `or set MODELPLUG_PRESET (for example MODELPLUG_PRESET=${example} ${apiKeyEnvName(example)}=...).`,
   );
+}
+
+/** `<PRESET>_API_KEY`, the environment variable single-provider mode reads for a preset. */
+export function apiKeyEnvName(preset: string): string {
+  return `${preset.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_API_KEY`;
 }
 
 function stripTrailingSlash(url: string | undefined): string | undefined {

@@ -326,7 +326,7 @@ function parseInput(raw: unknown, systemParts: string[], lowering: Lowering, too
           throw new IngressError(
             400,
             "unsupported",
-            `custom_tool_call "${name}" is not declared in this request's tools. If this is Codex's Responses Lite dialect, use a provider/model name so Codex sends the classic dialect, or route this OpenAI model through the chatgpt provider.`,
+            `custom_tool_call "${name}" is not declared in this request's tools. If this is Codex's Responses Lite dialect, use a provider/model name so Codex sends the classic dialect, or route this model through a passthrough provider (wire openai-responses).`,
           );
         }
         pushToolCall(callId, name, JSON.stringify({ input: str(item.input) ?? "" }));
@@ -361,7 +361,7 @@ function parseInput(raw: unknown, systemParts: string[], lowering: Lowering, too
         throw new IngressError(
           400,
           "unsupported",
-          "this request uses Codex's Responses Lite dialect (`additional_tools`), which only OpenAI's own backend serves. Use a provider/model name so Codex sends the classic dialect, or route this OpenAI model through the chatgpt provider.",
+          "this request uses Codex's Responses Lite dialect (`additional_tools`), which only Codex's own backend serves. Use a provider/model name so Codex sends the classic dialect, or route this model through a passthrough provider (wire openai-responses).",
         );
       }
       case "item_reference":

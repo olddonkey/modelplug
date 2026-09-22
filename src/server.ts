@@ -132,7 +132,7 @@ export function modelList(config: ResolvedConfig): { object: "list"; data: Array
 function statusText(config: ResolvedConfig, version: string, extra: string[]): string {
   const lines = [`modelplug ${version}`, `config: ${config.source}`, ""];
   for (const p of Object.values(config.providers)) {
-    const auth = p.credential === "chatgpt" ? "   (chatgpt login)" : p.apiKey ? "" : "   (no key)";
+    const auth = p.credential !== "api-key" ? `   (${p.credential} login)` : p.apiKey ? "" : "   (no key)";
     lines.push(`${p.name.padEnd(14)} ${p.wire.padEnd(17)} ${p.baseUrl}${auth}`);
   }
   if (Object.keys(config.aliases).length > 0) {

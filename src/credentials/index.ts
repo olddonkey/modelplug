@@ -46,6 +46,8 @@ export interface CredentialProvider {
   /** Throws `CredentialError` when nothing usable exists (no account, refresh failed). */
   resolve(target: RouteTarget, attempt: number, conversationId?: string): Promise<Credential>;
   report(target: RouteTarget, credential: Credential, report: AttemptReport): Promise<AttemptAdvice | void>;
+  /** Human-readable account and quota lines for the `/` status page. Kinds with nothing to show omit it. */
+  status?(): string[];
 }
 
 export class CredentialError extends Error {

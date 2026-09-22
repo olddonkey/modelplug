@@ -1,14 +1,14 @@
 /**
  * Joins ingress, route, credentials, attempts and wires into request handlers.
  *
- * This build serves one path: the same-protocol passthrough for Responses
- * requests to an `openai-responses` provider (the ChatGPT backend). The IR
- * path for routed models plugs in here later without changing the shape.
+ * Two paths share one attempt loop: the same-protocol passthrough for Responses
+ * requests to an `openai-responses` provider (bytes relayed, headers injected,
+ * no payload rewrites) and the IR path for every other wire (parse, encode,
+ * decode, respond). Retries happen only before the first byte reaches the client.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { DEFAULT_ATTEMPT_POLICY, RouteExhaustedError, runAttempts, type AttemptOutcome, type AttemptPolicy } from "./attempt.ts";
 import type { ResolvedConfig, ResolvedProvider } from "./config.ts";
-import type { ChatgptCredentialProvider, QuotaWindow } from "./credentials/chatgpt.ts";
 import { CredentialError, credentialProviderFor, type Credential, type CredentialDeps, type CredentialProvider } from "./credentials/index.ts";
 import { IngressError, parseResponsesRequest, respondResponses, type ParsedResponses } from "./ingress/responses.ts";
 import type { ErrorKind, Event, ProviderTarget, ResponseSink, Usage, WireError } from "./ir.ts";
@@ -302,24 +302,9 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
   function statusLines(): string[] {
     const lines: string[] = [];
     for (const provider of Object.values(config.providers)) {
-      if (provider.credential !== "chatgpt") continue;
-      const creds = credentialsFor(provider) as ChatgptCredentialProvider;
-      let accounts;
-      try {
-        accounts = creds.accounts();
-      } catch (err) {
-        lines.push(`${provider.name}: ${err instanceof Error ? err.message : String(err)}`);
-        continue;
-      }
-      if (accounts.length === 0) {
-        lines.push(`${provider.name}: no ChatGPT account (run: modelplug login chatgpt --import)`);
-        continue;
-      }
-      for (const account of accounts) {
-        const quota = creds.quota().get(account.id);
-        const who = `${account.email ?? account.id}${account.planType ? ` (${account.planType})` : ""}${account.needsLogin ? "  NEEDS LOGIN" : ""}`;
-        lines.push(`${provider.name}  ${who}  ${describeWindow("primary", quota?.primary, now())}  ${describeWindow("secondary", quota?.secondary, now())}`);
-      }
+      const creds = credentialsFor(provider);
+      if (!creds.status) continue;
+      for (const line of creds.status()) lines.push(`${provider.name}  ${line}`);
     }
     return lines;
   }
@@ -345,21 +330,6 @@ function nodeSink(res: ServerResponse): ResponseSink {
       if (!res.writableEnded) res.end();
     },
   };
-}
-
-function describeWindow(fallback: string, window: QuotaWindow | undefined, now: number): string {
-  const label = window?.windowMinutes === 300 ? "5h" : window?.windowMinutes === 10080 ? "weekly" : window?.windowMinutes ? `${window.windowMinutes}m` : fallback;
-  if (!window || window.usedPercent === undefined) return `${label}: n/a`;
-  const reset = window.resetAt !== undefined ? `, resets in ${formatDuration(window.resetAt - now)}` : "";
-  return `${label}: ${window.usedPercent}% used${reset}`;
-}
-
-function formatDuration(ms: number): string {
-  const minutes = Math.max(0, Math.round(ms / 60_000));
-  if (minutes < 60) return `${minutes}m`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 48) return `${hours}h${minutes % 60 ? ` ${minutes % 60}m` : ""}`;
-  return `${Math.floor(hours / 24)}d ${hours % 24}h`;
 }
 
 /**
