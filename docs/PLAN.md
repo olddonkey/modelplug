@@ -106,10 +106,10 @@ native backend, decoded progressively out of the lowered arguments;
 **Acceptance (2026-09-23), Codex 0.155.1 → modelplug → Kimi K3
 (`api.kimi.com/coding/v1`, the subscription token, Chat Completions):** a hello
 turn, an `npm test` turn through the shell, and an `apply_patch` turn that
-edited README.md and re-ran the tests: eight requests, all 200, usage log with
-reasoning tokens. The `view_image` turn carried the base64 `input_image`
-through the ingress, but the borrowed token expired before Kimi answered
-(401), so that answer is the one turn still unverified. Learned on the way:
+edited README.md and re-ran the tests, and a `view_image` turn on a generated
+PNG that Kimi described correctly ("a solid red square centered on a white
+background"): nine requests, all 200, usage log with reasoning tokens. That is
+the exit criterion below, met on Kimi. Learned on the way:
 
 - Codex 0.155.1's **classic** dialect declares code mode's `exec` as a
   `custom` tool (lark grammar) beside `wait`, `request_user_input*`, the
@@ -124,11 +124,11 @@ through the ingress, but the borrowed token expired before Kimi answered
   five streams including `finish_reason: length` spent entirely on reasoning;
   each is decoded whole and in seven-byte chunks.
 
-Still open: the DeepSeek run, the `view_image` answer, `max_tokens` naming
-(Codex never sends `max_output_tokens`, so it has not mattered), and a Kimi
-login credential kind so the subscription token refreshes itself (planned for
-milestone 7; worth pulling forward, the maintainer has a subscription and no
-API key).
+Still open: the DeepSeek run (no key), `max_tokens` naming (Codex never sends
+`max_output_tokens`, so it has not mattered), and a Kimi login credential kind
+so the subscription token refreshes itself (planned for milestone 7; worth
+pulling forward, the maintainer has a subscription and no API key, and a
+borrowed token lasts minutes).
 
 **Goal.** `responses` ingress + `openai-chat` wire + the pipeline that joins
 them. Real Codex completes a multi-step coding task against DeepSeek through
