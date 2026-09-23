@@ -78,7 +78,7 @@ test("local refusals and lowering of custom tools, tool_choice, allowed_tools, f
   assert.deepEqual(parsed.turn.tools!.map(t => t.name), ["shell", "agents__spawn"]);
   assert.equal(parsed.turn.toolChoice, "required");
   assert.ok(parsed.lowering.customTools.has("apply_patch"));
-  assert.deepEqual(parsed.turn.reasoning, { effort: "max", summary: "auto" });
+  assert.deepEqual(parsed.turn.reasoning, { effort: "xhigh", summary: "auto" });
   assert.deepEqual(parsed.turn.responseFormat, { type: "json_schema", name: "out", schema: { type: "object" }, strict: true });
   assert.deepEqual(parsed.turn.sampling, { maxOutputTokens: 512, temperature: 0.2 });
   assert.equal(parsed.stream, false);

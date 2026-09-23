@@ -6,6 +6,7 @@ const DROPPED_REQUEST_HEADERS = new Set([
   "content-length",
   "connection",
   "authorization",
+  "x-api-key",
   "transfer-encoding",
   "accept-encoding",
   "keep-alive",

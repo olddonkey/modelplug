@@ -7,7 +7,7 @@ import type { Usage } from "./ir.ts";
 export interface UsageRecord {
   ts: string;
   ingress: "responses" | "messages";
-  route: "responses" | "compact" | "messages";
+  route: "responses" | "compact" | "messages" | "countTokens";
   modelRef: string;
   provider: string;
   model: string;

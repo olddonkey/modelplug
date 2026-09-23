@@ -54,6 +54,11 @@ Codex chooses its wire dialect from the model name, so the name you put in
 | `provider/model` (`deepseek/deepseek-v4`, `kimi/k3`) | The classic Responses dialect: `instructions`, function tools, `function_call` items | Translates to the provider's wire and back. |
 | `chatgpt/gpt-5.6-sol` | Classic, because the name has a prefix | Works, but Codex loses code mode. Prefer the bare name with `defaultProvider`. |
 
+For a Kimi Code subscription, run `modelplug login kimi`, configure a provider
+with `{ "preset": "kimi" }`, and select `kimi/k3`. The login prints a URL and
+code to enter in your browser; modelplug refreshes the token automatically.
+The `moonshot` preset is for Moonshot API keys.
+
 A Lite request that reaches a routed provider is refused with a 400 that says
 so, because code mode cannot be translated. Use a `provider/model` name, or
 route that model through the `chatgpt` provider.
@@ -86,9 +91,6 @@ probes.
 
 ## Claude Code
 
-> The `/v1/messages` ingress is milestone 6. Until it lands, Claude Code gets a
-> 501 from modelplug. The snippet is here so the shape is known.
-
 ```bash
 export ANTHROPIC_BASE_URL="http://127.0.0.1:10100"
 export ANTHROPIC_AUTH_TOKEN="modelplug"
@@ -99,6 +101,10 @@ export ANTHROPIC_MODEL="deepseek/deepseek-v4"
 
 `ANTHROPIC_AUTH_TOKEN` can be anything; modelplug does not read it. Logging in
 with a Claude subscription through modelplug is a permanent non-goal.
+Use a `provider/model` name to route through the IR. An `anthropic` provider
+relays Messages responses byte for byte with its configured key injected.
+`/v1/messages/count_tokens` is exact on passthrough and an estimate for routed
+providers (text bytes divided by four, rounded up, plus 1,500 per image).
 
 ## Any other Responses client
 

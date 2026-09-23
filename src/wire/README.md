@@ -8,7 +8,7 @@ order, because each one forces a decision the next one depends on:
 | 1 | `openai-chat` | Tool-call argument streaming, `reasoning_content`, thinking toggles, strict usage fields |
 | 2 | `anthropic` | The `Opaque` envelope for thinking signatures, tool_result pairing, budget mapping |
 | 3 | `gemini` | Thought signatures as a second `Opaque` kind, function-call id synthesis |
-| 4 | `openai-responses` | Passing hosted tools through, `encrypted_content` as `Opaque` |
+| 4 | `openai-responses` | API-key requests through the IR, `encrypted_content` as `Opaque`; hosted tools are dropped by the ingress |
 
 ## Contract
 
@@ -25,6 +25,11 @@ Implement `Wire` from `../ir.ts`:
 - `modelsRequest(target)` and `parseModels(body)` are optional: the GET that
   lists models and how to read its answer. `check` and `/v1/models` use them;
   nothing on the request path does.
+- `passthroughHeaders(target)` is optional: auth and protocol headers the wire
+  injects when the client and upstream speak the same protocol.
+
+The `anthropic` wire's `Opaque` carries thinking text with its signature and
+replays it to the provider that minted it, across models.
 
 ## Rules
 

@@ -92,6 +92,114 @@ const SCENARIOS: Partial<Record<WireName, Scenario>> = {
       writeInPieces(res, frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join(""), "é");
     },
   },
+  "openai-responses": {
+    provider: port => ({ wire: "openai-responses", baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: "k" }),
+    turn1: (req, res, body) => {
+      assert.equal(req.url, "/v1/responses");
+      assert.equal(req.headers.authorization, "Bearer k");
+      const request = JSON.parse(body) as Record<string, any>;
+      assert.equal(request.instructions, "You are a coding agent.");
+      assert.equal(request.stream, true);
+      assert.equal(request.store, false);
+      for (const key of ["client_metadata", "prompt_cache_key"]) assert.equal(request[key], undefined);
+      assert.ok(!request.tools.some((t: { type: string }) => t.type === "namespace"));
+      const tool = request.tools.find((t: { name: string }) => t.name === "apply_patch");
+      assert.ok(tool);
+      assert.equal(tool.type, "function");
+      assert.deepEqual(tool.parameters.required, ["input"]);
+      const args = JSON.stringify({ input: PATCH });
+      const pieces = cut(args, [args.indexOf('\\"') + 1, args.indexOf("\\\\") + 1, args.lastIndexOf("\\n") + 1, args.indexOf("\\t") + 1]);
+      assert.ok(pieces.length >= 4);
+      const frames = [
+        { type: "response.created", response: { model: "m" } },
+        { type: "response.output_item.added", output_index: 0, item: { id: "fc_1", type: "function_call", call_id: CALL_ID, name: "apply_patch", arguments: "" } },
+        ...pieces.map(delta => ({ type: "response.function_call_arguments.delta", output_index: 0, item_id: "fc_1", delta })),
+        { type: "response.function_call_arguments.done", output_index: 0, item_id: "fc_1", arguments: args },
+        { type: "response.output_item.done", output_index: 0, item: { id: "fc_1", type: "function_call", call_id: CALL_ID, name: "apply_patch", arguments: args } },
+        { type: "response.completed", response: { status: "completed", usage: { input_tokens: 50, output_tokens: 20 } } },
+      ];
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, frames.map(f => `event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`).join(""), "é");
+    },
+    turn2: (req, res, body) => {
+      assert.equal(req.url, "/v1/responses");
+      const request = JSON.parse(body) as { input: Array<Record<string, any>> };
+      const call = request.input.find(i => i.type === "function_call");
+      assert.ok(call);
+      assert.equal(call.call_id, CALL_ID);
+      assert.equal(call.name, "apply_patch");
+      assert.equal(JSON.parse(call.arguments).input, PATCH);
+      const output = request.input.find(i => i.type === "function_call_output");
+      assert.ok(output);
+      assert.equal(output.call_id, CALL_ID);
+      assert.equal(output.output, TOOL_OUTPUT);
+      const frames = [
+        { type: "response.created", response: { model: "m" } },
+        { type: "response.output_text.delta", delta: ANSWER.slice(0, 9) },
+        { type: "response.output_text.delta", delta: ANSWER.slice(9) },
+        { type: "response.completed", response: { status: "completed", usage: { input_tokens: 10, output_tokens: 4 } } },
+      ];
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, frames.map(f => `event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`).join(""), "é");
+    },
+  },
+  anthropic: {
+    provider: port => ({ wire: "anthropic", baseUrl: `http://127.0.0.1:${port}`, apiKey: "k" }),
+    turn1: (req, res, body) => {
+      assert.equal(req.url, "/v1/messages");
+      assert.equal(req.headers["x-api-key"], "k");
+      assert.equal(req.headers["anthropic-version"], "2023-06-01");
+      const request = JSON.parse(body) as Record<string, any>;
+      assert.equal(request.stream, true);
+      assert.equal(typeof request.system, "string");
+      const tool = (request.tools as Array<Record<string, any>>).find(t => t.name === "apply_patch");
+      assert.ok(tool, "apply_patch is lowered to a function tool");
+      assert.deepEqual(tool.input_schema.required, ["input"]);
+      assert.equal(tool.eager_input_streaming, true);
+      const last = request.messages.at(-1) as { role: string; content: Array<{ type: string; text?: string }> };
+      assert.equal(last.role, "user");
+      assert.ok(last.content.some(b => b.type === "text" && b.text?.includes(FILE)), "the prompt reached the upstream intact");
+      const args = JSON.stringify({ input: PATCH });
+      const pieces = cut(args, [args.indexOf('\\"') + 1, args.indexOf("\\\\") + 1, args.lastIndexOf("\\n") + 1, args.indexOf("\\t") + 1]);
+      assert.ok(pieces.length >= 4, "the arguments are split across several chunks");
+      const frame = (type: string, data: Record<string, unknown>) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+      const stream = [
+        frame("message_start", { message: { model: "m", usage: { input_tokens: 50, output_tokens: 1 } } }),
+        frame("content_block_start", { index: 0, content_block: { type: "tool_use", id: CALL_ID, name: "apply_patch", input: {} } }),
+        ...pieces.map(partial_json => frame("content_block_delta", { index: 0, delta: { type: "input_json_delta", partial_json } })),
+        frame("content_block_stop", { index: 0 }),
+        frame("message_delta", { delta: { stop_reason: "tool_use" }, usage: { output_tokens: 20 } }),
+        frame("message_stop", {}),
+      ].join("");
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, stream, "é");
+    },
+    turn2: (_req, res, body) => {
+      const request = JSON.parse(body) as { messages: Array<Record<string, any>> };
+      const assistant = request.messages.find(m => m.role === "assistant" && m.content.some((b: { type: string }) => b.type === "tool_use"));
+      assert.ok(assistant, "the replayed call is an assistant tool_use block");
+      const uses = assistant.content.filter((b: { type: string }) => b.type === "tool_use");
+      assert.equal(uses.length, 1);
+      assert.equal(uses[0].id, CALL_ID);
+      assert.equal(uses[0].name, "apply_patch");
+      assert.deepEqual(uses[0].input, { input: PATCH });
+      const result = request.messages[request.messages.indexOf(assistant) + 1];
+      assert.equal(result?.role, "user");
+      assert.deepEqual(result.content[0], { type: "tool_result", tool_use_id: CALL_ID, content: TOOL_OUTPUT });
+      const frame = (type: string, data: Record<string, unknown>) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+      const stream = [
+        frame("message_start", { message: { model: "m", usage: { input_tokens: 60, output_tokens: 1 } } }),
+        frame("content_block_start", { index: 0, content_block: { type: "text", text: "" } }),
+        frame("content_block_delta", { index: 0, delta: { type: "text_delta", text: ANSWER.slice(0, 9) } }),
+        frame("content_block_delta", { index: 0, delta: { type: "text_delta", text: ANSWER.slice(9) } }),
+        frame("content_block_stop", { index: 0 }),
+        frame("message_delta", { delta: { stop_reason: "end_turn" }, usage: { output_tokens: 5 } }),
+        frame("message_stop", {}),
+      ].join("");
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, stream, "é");
+    },
+  },
   "openai-chat": {
     provider: port => ({ wire: "openai-chat", baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: "k" }),
     turn1: (req, res, body) => {
@@ -224,8 +332,6 @@ async function runScenario(scenario: Scenario): Promise<void> {
 }
 
 for (const name of Object.keys(WIRES) as WireName[]) {
-  // The pipeline relays Responses requests to this wire byte for byte instead of round-tripping the IR.
-  if (name === "openai-responses") continue;
   test(`conformance: apply_patch round trip through ${name}`, async () => {
     const scenario = SCENARIOS[name];
     assert.ok(scenario, `wire "${name}" is registered but has no conformance scenario`);

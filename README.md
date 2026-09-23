@@ -9,8 +9,9 @@ with your ChatGPT subscription. You can read the whole thing in a day.
 > Status: pre-alpha. Two paths work end to end with real Codex: the
 > ChatGPT-subscription passthrough, and routing to any Chat Completions
 > provider (DeepSeek, Kimi, Qwen, GLM, Groq, OpenRouter, Ollama, vLLM, …).
-> `modelplug check` probes every provider. Anthropic, Gemini and the Claude
-> Code ingress are the next milestones and answer a clear error until then.
+> The Anthropic wire is in; live acceptance awaits an API key. `modelplug
+> check` probes every provider. The Claude Code ingress is in (live run
+> pending). Gemini is a later milestone and answers a clear error until then.
 > Client setup: [docs/CLIENTS.md](docs/CLIENTS.md). Design:
 > [docs/DESIGN.md](docs/DESIGN.md), [src/wire/README.md](src/wire/README.md).
 
@@ -59,6 +60,11 @@ modelplug login chatgpt                     # or log in through the browser; rep
 MODELPLUG_PRESET=chatgpt modelplug
 modelplug print codex --model gpt-5.5       # paste into ~/.codex/config.toml
 
+# Kimi Code subscription: visit the printed URL and enter the printed code
+modelplug login kimi
+MODELPLUG_PRESET=kimi modelplug
+modelplug print codex --model kimi/k3
+
 # or an API-key provider, no config file needed
 MODELPLUG_PRESET=deepseek DEEPSEEK_API_KEY=sk-... modelplug
 modelplug print codex --model deepseek-v4    # a provider/model name keeps Codex in its classic dialect
@@ -89,6 +95,13 @@ Models are addressed as `provider/model`. An alias whose value is a list is
 tried in order until one target answers. A bare OpenAI model name with
 `defaultProvider: "chatgpt"` keeps Codex's native dialect; the reasons are in
 [docs/CLIENTS.md](docs/CLIENTS.md).
+
+Set `passthrough` on a provider to choose whether matching client and upstream
+protocols are relayed unchanged. The default is `true` for ChatGPT credentials
+and for providers on the `anthropic` wire, `false` otherwise. The `chatgpt` and
+`anthropic` presets set it to `true`; a provider setting overrides its preset. Set `"passthrough": false`
+on an OpenAI Responses provider to translate through the IR, which removes
+Codex-only request fields and flattens namespace tools.
 
 Several ChatGPT accounts form a pool: run `modelplug login chatgpt` once per
 account. A new conversation picks an account by the provider's `strategy`

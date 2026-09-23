@@ -41,10 +41,12 @@ async function harness(handlers: FakeHandler[], options: { tokenPort?: number } 
       providers: {
         chatgpt: { preset: "chatgpt", baseUrl: `http://127.0.0.1:${upstream.port}` },
         local: { preset: "ollama", baseUrl: `http://127.0.0.1:${upstream.port}/v1` },
+        responseskey: { wire: "openai-responses", baseUrl: `http://127.0.0.1:${upstream.port}/v1`, apiKey: "responses-test-key" },
         anth: { preset: "anthropic", apiKey: "k" },
+        goog: { preset: "google", apiKey: "k" },
       },
       defaultProvider: "chatgpt",
-      aliases: { sol: "chatgpt/gpt-5.6-sol", missing: "anth/claude" },
+      aliases: { sol: "chatgpt/gpt-5.6-sol", missing: "goog/gemini" },
     },
     "test",
   );
@@ -213,7 +215,7 @@ test("a non-retryable upstream error becomes a Responses-shaped JSON error with 
   }
 });
 
-test("local refusals: missing model, previous_response_id, wire not served yet", async () => {
+test("local refusals: missing model, previous_response_id", async () => {
   const h = await harness([okSse()]);
   try {
     const missing = await h.post({ input: "hi" });
@@ -222,9 +224,6 @@ test("local refusals: missing model, previous_response_id, wire not served yet",
     const prev = await h.post({ model: "gpt-5.6-sol", previous_response_id: "resp_0" });
     assert.equal(prev.status, 400);
     assert.match(((await prev.json()) as { error: { message: string } }).error.message, /previous_response_id is not supported/);
-    const routed = await h.post({ model: "missing" });
-    assert.equal(routed.status, 400);
-    assert.match(((await routed.json()) as { error: { message: string } }).error.message, /wire "anthropic".*cannot serve yet/);
     assert.equal(h.upstream.calls, 0);
   } finally {
     await h.stop();
@@ -319,6 +318,41 @@ test("IR path: a classic Codex request is translated to Chat Completions and the
     assert.equal(line.provider, "local");
     assert.equal(line.model, "qwen3");
     assert.equal(line.usage.inputTokens, 40);
+  } finally {
+    await h.stop();
+  }
+});
+
+test("IR path: API-key Responses strips private fields and flattens namespace tools", async () => {
+  const seen: Record<string, unknown> = {};
+  const h = await harness([
+    (req, res, body) => {
+      seen.path = req.url;
+      seen.auth = req.headers.authorization;
+      seen.codexHeader = req.headers["x-codex-turn-metadata"];
+      seen.body = JSON.parse(body) as Record<string, unknown>;
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(SSE);
+    },
+  ]);
+  try {
+    const fixture = JSON.parse(readFileSync(new URL("./fixtures/responses/classic/hello.request.json", import.meta.url), "utf8")) as Record<string, unknown>;
+    const res = await h.post({ ...fixture, model: "responseskey/gpt-test" }, { "x-codex-turn-metadata": "private", authorization: "Bearer client" });
+    assert.equal(res.status, 200);
+    const body = seen.body as Record<string, any>;
+    assert.equal(seen.path, "/v1/responses");
+    assert.equal(seen.auth, "Bearer responses-test-key");
+    assert.equal(seen.codexHeader, undefined);
+    assert.equal(body.model, "gpt-test");
+    assert.equal(body.stream, true);
+    assert.equal(body.store, false);
+    assert.equal(body.client_metadata, undefined);
+    assert.equal(body.prompt_cache_key, undefined);
+    assert.ok(body.tools.some((t: { name: string }) => t.name === "multi_agent_v1__spawn_agent"));
+    assert.ok(body.tools.every((t: { type: string }) => t.type === "function"));
+    const text = await res.text();
+    assert.match(text, /event: response\.completed/);
+    assert.match(text, /"input_tokens":120/);
   } finally {
     await h.stop();
   }

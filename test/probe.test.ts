@@ -106,8 +106,8 @@ test("connection refused and a silent server are unreachable within the timeout"
   }
 });
 
-test("wires without a model list and credential kinds without an account are reported, not probed", async () => {
-  const config = parseConfig({ providers: { a: { preset: "anthropic", apiKey: "k" }, c: { preset: "chatgpt" } } }, "test");
+test("credential kinds without an account are reported, not probed", async () => {
+  const config = parseConfig({ providers: { c: { preset: "chatgpt" } } }, "test");
   let fetched = 0;
   const results = await probeProviders(config, {
     now,
@@ -118,8 +118,6 @@ test("wires without a model list and credential kinds without an account are rep
     },
   });
   const byName = Object.fromEntries(results.map(r => [r.provider, r]));
-  assert.equal(byName.a!.state, "unsupported");
-  assert.match(byName.a!.detail, /not served in this build/);
   assert.equal(byName.c!.state, "no_credential");
   assert.match(byName.c!.detail, /no ChatGPT account/);
   assert.equal(fetched, 0);

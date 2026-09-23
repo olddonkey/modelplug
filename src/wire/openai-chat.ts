@@ -4,20 +4,11 @@
  * come in through `Capabilities` only.
  */
 import { randomBytes } from "node:crypto";
-import type { AssistantMessage, Capabilities, Event, Message, ProviderTarget, ReasoningEffort, ToolMessage, Turn, Usage, UserMessage, Wire, WireError, WireRequest } from "../ir.ts";
+import type { AssistantMessage, Capabilities, Event, Message, ProviderTarget, ToolMessage, Turn, Usage, UserMessage, Wire, WireError, WireRequest } from "../ir.ts";
 import { decodeNdjson, decodeSse } from "../sse.ts";
+import { clampEffort } from "./effort.ts";
 import { classifyOpenAiError } from "./openai-errors.ts";
 import { openaiModelsRequest, parseOpenaiModels } from "./openai-models.ts";
-
-const EFFORT_ORDER: ReasoningEffort[] = ["minimal", "low", "medium", "high", "max"];
-
-function clampEffort(effort: ReasoningEffort, levels: ReasoningEffort[] | undefined): ReasoningEffort {
-  if (!levels || levels.length === 0 || levels.includes(effort)) return effort;
-  const wanted = EFFORT_ORDER.indexOf(effort);
-  const sorted = [...levels].sort((a, b) => EFFORT_ORDER.indexOf(a) - EFFORT_ORDER.indexOf(b));
-  for (const level of sorted) if (EFFORT_ORDER.indexOf(level) >= wanted) return level;
-  return sorted[sorted.length - 1]!;
-}
 
 function imageUrl(part: { type: "image"; mediaType: string; data: string } | { type: "image_url"; url: string }): string {
   return part.type === "image" ? `data:${part.mediaType};base64,${part.data}` : part.url;

@@ -86,7 +86,7 @@ const DROPPED_ITEM_TYPES = new Set([
   "compaction",
 ]);
 
-const EFFORTS: Record<string, ReasoningEffort> = { none: "minimal", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "max", max: "max" };
+const EFFORTS: Record<string, ReasoningEffort> = { none: "minimal", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" };
 
 /* ------------------------------------------------------------- opaque */
 
