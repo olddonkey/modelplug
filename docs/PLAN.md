@@ -517,18 +517,100 @@ with two accounts first; it is one named function with one fixture when it lands
 
 ## Milestone 5: `anthropic` wire
 
-Forces the `Opaque` design. Scope: system as top-level `system`; `thinking`
-budget from effort (`low 2k / medium 8k / high 16k / max 32k`, `max_tokens`
-raised above the budget); `tool_use` / `tool_result` pairing with results as the
-leading blocks of the next user message; thinking block signatures as
-`Opaque{kind:"signature"}` replayed only to the same provider and model;
-`redacted_thinking` carried opaque; images as base64 blocks; `stop_reason`
-mapping; 529 `overloaded_error` retryable; prompt-caching breakpoints on the
-system block and the last user message (on by default, it is free).
+Forces the `Opaque` design. Specified against the Claude API as of 2026-06
+(the `claude-api` reference), which moved under the original scope:
+
+**Facts that changed the scope.**
+
+- Current models (Opus 5, Sonnet 5, Fable 5.1, Opus 4.6 to 4.8) take
+  `thinking: {type: "adaptive"}` plus `output_config: {effort}` with levels
+  `low | medium | high | xhigh | max`; `budget_tokens` returns 400 on them.
+  Only older models (Haiku 4.5, Sonnet 4.5, …) still take
+  `thinking: {type: "enabled", budget_tokens}`. So `Capabilities.reasoning`
+  is `effort` in the preset and `budget` when the user says so for an old
+  model, and the IR gained `xhigh` (Codex sends it; the ingress used to fold
+  it into `max`).
+- `temperature` / `top_p` return 400 on current models: the preset sets
+  `temperature: false`.
+- Thinking blocks must go back unchanged. The API drops blocks a target model
+  cannot read, and stripping them yourself can trigger ordering and signature
+  400s (Fable 5.1 also checks that the prefix before a block is byte-identical
+  to when it was produced). So the `Opaque` carries the thinking text and the
+  signature together and is replayed whenever this provider minted it, on any
+  model; only a foreign provider's block is dropped. `display: "summarized"`
+  is requested so Codex shows a readable summary.
+- Forced tool use (`any` / `tool`) is rejected by Fable 5.1 and Opus 5.5 but
+  accepted by Opus 5 and Sonnet 5; it is sent when the client asks for it.
+- Assistant prefill is gone: a transcript ending in an assistant turn is a
+  400. Codex never sends one.
+
+**Spec.** `src/wire/anthropic.ts` implements `Wire` from `src/ir.ts`:
+
+1. **encode.** `POST {baseUrl}/v1/messages`, headers `x-api-key`,
+   `anthropic-version: 2023-06-01`. `system` as a string. Messages:
+   consecutive same-role messages merged; `tool_result` blocks lead the user
+   message, several together for parallel calls, and a result arriving after
+   user text starts a new user message; images as `base64` or `url` source
+   blocks, replaced by a `[n image(s) omitted …]` text when `caps.images` is
+   off; assistant `thinking` / `redacted_thinking` blocks rebuilt from the
+   Opaque (`kind: "thinking"` with JSON `{thinking, signature}`, `kind:
+   "redacted_thinking"` with the raw data), foreign or malformed Opaques
+   dropped; `tool_use.input` parsed from the arguments, `{}` when unparseable;
+   empty text blocks skipped. Tools carry `input_schema`, `strict` when set,
+   and `eager_input_streaming: true` when streaming. `tool_choice` maps
+   auto / none / required→`any` / name→`tool`, with
+   `disable_parallel_tool_use: true` when `parallelToolCalls` is false.
+   `max_tokens` is the client's value, else `caps.maxOutputTokens`, else
+   64000, clamped to the cap. Effort mode: `thinking: {type: "adaptive",
+   display: "summarized"}` and `output_config.effort` clamped to
+   `caps.reasoningLevels` (`minimal` → `low`). Budget mode:
+   `thinking: {type: "enabled", budget_tokens}` from `budgetTokens` or the
+   table low 2048 / medium 8192 / high 16384 / xhigh 24576 / max 32768,
+   `max_tokens` raised above it; `minimal` or no reasoning request → no
+   thinking field. `json_schema` → `output_config.format`. Top-level
+   `cache_control: {type: "ephemeral"}` on every request.
+2. **decode** over `decodeSse`: `message_start` usage (`input_tokens` +
+   cache read + cache write = `inputTokens`, the two cache counts kept);
+   `content_block_start/delta/stop` for text, thinking (`thinking_delta` →
+   `reasoning_delta`, `signature_delta` accumulated, stop → `reasoning_opaque`
+   even when the text is empty), `redacted_thinking` (→ `reasoning_opaque`),
+   `tool_use` (`tool_call_start`, `input_json_delta` → `tool_call_delta`, a
+   call that streamed nothing gets `{}` or the block's own `input`, then
+   `tool_call_end`); unknown block types ignored; `message_delta` stop
+   reason and usage; `message_stop` → `done` (`end_turn`, `stop_sequence`,
+   `pause_turn` → end_turn; `tool_use`; `max_tokens`; `refusal` →
+   content_filter); an `error` event → the classified error; a stream that
+   ends without `message_stop` → error `upstream`, retryable only when
+   nothing was emitted.
+3. **classify** `{type: "error", error: {type, message}}`: 401/403 auth;
+   402 or `billing_error` quota; 404 or `not_found_error` not_found; 429
+   rate_limit with retry-after; 413 context_length; 400 with "prompt is too
+   long" wording context_length, with credit/billing wording quota, otherwise
+   invalid_request; 529 or `overloaded_error` overloaded, retryable; 5xx
+   upstream, retryable.
+4. **models.** `GET {baseUrl}/v1/models` with the same headers; ids from
+   `data[].id`.
+5. **Preset** `anthropic`: `reasoning: "effort"`, levels low…max,
+   `temperature: false`, a note on the budget override for old models. The
+   wire default for `wire: "anthropic"` matches.
+6. **Tests.** `test/wire-anthropic.test.ts`: encode (every rule in 1 with a
+   transcript that has a same-provider Opaque, a foreign one, a redacted one,
+   a tool result with an image, a follow-up user text; budget mode; json
+   schema; images off), decode (thinking summarized and omitted, redacted,
+   tool use with and without deltas, refusal, max_tokens, an `error` event,
+   a truncated stream), classify table, models request. An `anthropic`
+   scenario in `test/conformance.test.ts`: the suite fails without one.
+7. **Docs.** `src/wire/README.md` row, README status, this section's status.
+
+**Status (2026-09-23):** steps 1 to 5 drafted (`src/wire/anthropic.ts`,
+`src/wire/effort.ts` shared with `openai-chat`, `xhigh` in the IR, preset,
+registry, `main.ts` reads the registry). Steps 6 and 7 and a review of the
+draft against this spec go through the implementation loop with Codex.
 
 Exit: Codex runs the M2 task against Claude with thinking on, across at least
 three tool-calling turns, with zero `invalid signature` or
 `thinking block order` errors. Conformance scenario green on both wires.
+Needs an Anthropic API key on the dev machine; none is present today.
 
 ## Milestone 6: `messages` ingress
 

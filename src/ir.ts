@@ -14,7 +14,7 @@
 
 export type JsonObject = { [key: string]: unknown };
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "max";
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /* ------------------------------------------------------------------ input */
 

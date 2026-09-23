@@ -38,12 +38,20 @@
     "wire": "anthropic",
     "baseUrl": "https://api.anthropic.com",
     "capabilities": {
-      "reasoning": "budget",
+      "reasoning": "effort",
+      "reasoningLevels": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
       "tools": true,
       "images": true,
-      "temperature": true,
+      "temperature": false,
       "stream": "sse"
-    }
+    },
+    "note": "Current Claude models: adaptive thinking driven by effort; temperature is rejected. For Haiku 4.5 or older models set capabilities.reasoning to \"budget\" and temperature to true."
   },
   "google": {
     "wire": "gemini",
