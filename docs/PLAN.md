@@ -594,6 +594,11 @@ Exit: conformance green on three wires; the pipeline test proves both paths; liv
 
 ### 7c. `gemini` wire
 
+**Status (2026-09-23):** wire, synthetic-frame tests and the conformance scenario
+are in; 112 tests green. Thought signatures ride through the Responses ingress
+in a `reasoning` item bound to the call (the Messages ingress gets the same in a
+follow-up once its PR lands). Live acceptance against a Google key is pending.
+
 Gemini API (`generativelanguage.googleapis.com`), API key in the
 `x-goog-api-key` header. Spec (no fixtures on the dev machine; the wire is
 written against the public API reference and recorded when a key exists):
