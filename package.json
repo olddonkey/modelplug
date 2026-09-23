@@ -1,6 +1,6 @@
 {
   "name": "modelplug",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Plug any model into Codex and Claude Code. A small local proxy, nothing else.",
   "type": "module",
   "license": "MIT",
@@ -14,7 +14,8 @@
     "bin",
     "dist",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "start": "node src/main.ts",

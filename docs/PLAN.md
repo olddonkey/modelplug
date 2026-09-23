@@ -910,6 +910,14 @@ waits for a recording only a live Codex session can produce.
 Exit: `npm pack` produces a tarball the maintainer publishes by hand
 (publishing needs the npm account; not automated).
 
+**Status (2026-09-23): 8a done.** `CHANGELOG.md` records shipped features and
+live-acceptance limits; the package version is 0.1.0 and the pack list contains
+`bin/`, `dist/` (including `dist/presets.json`), `README.md`, `LICENSE`,
+`CHANGELOG.md`, and npm's required `package.json` manifest, with no other files.
+The README status reflects the release; the quick start and `docs/CLIENTS.md`
+remain current. Build, pack preview and the full suite pass (199 tests).
+Milestone 8b remains parked.
+
 ### 8b. `POST /v1/responses/compact` for routed providers
 
 Codex sends compaction requests only when a session's context is large,
