@@ -652,9 +652,9 @@ same-protocol passthrough for `messages` → `anthropic`, and `count_tokens`.
 | `stream` | `stream`, default false |
 | `context_management`, `mcp_servers`, `container`, `betas`, `fallbacks`, `speed`, `service_tier` | ignored; the `anthropic-beta` request header is not forwarded |
 
-Rules: the first message must be `user` and roles must alternate after
-tool-result splitting; violations are 400 `invalid_request` with the
-Anthropic-style message. Empty content is 400. Unknown block types are 400
+Rules: the first message must be `user` (400 `invalid_request` otherwise);
+consecutive same-role messages are accepted in order, as the API does.
+Empty content is 400. Unknown block types are 400
 naming the type, like the Responses ingress. `previous_response_id`-style
 state does not exist in this protocol.
 
