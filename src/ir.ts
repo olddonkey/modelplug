@@ -235,6 +235,8 @@ export interface Wire {
   decode(response: Response, caps: Capabilities, target: ProviderTarget): AsyncIterable<Event>;
   /** Classifies a non-2xx response from its status, headers and body text. */
   classifyError(status: number, headers: Headers, bodyText: string, target: ProviderTarget): WireError;
+  /** Optional: auth and protocol headers a same-protocol relay must inject. */
+  passthroughHeaders?(target: ProviderTarget): Record<string, string>;
   /** Optional: the GET that lists models on this wire, for `check` and `/v1/models`. Never on the request path. */
   modelsRequest?(target: ProviderTarget): { url: string; headers: Record<string, string> };
   /** Optional: model ids out of a `modelsRequest` body. */

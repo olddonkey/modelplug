@@ -650,7 +650,7 @@ same-protocol passthrough for `messages` → `anthropic`, and `count_tokens`.
 | `max_tokens`, `temperature`, `top_p`, `stop_sequences` | `Sampling`; `top_k` ignored |
 | `metadata.user_id` | `metadata.conversationId` (Claude Code sends a stable per-session hash) |
 | `stream` | `stream`, default false |
-| `context_management`, `mcp_servers`, `container`, `betas`, `fallbacks`, `speed`, `service_tier` | ignored; the `anthropic-beta` request header is not forwarded |
+| `context_management`, `mcp_servers`, `container`, `betas`, `fallbacks`, `speed`, `service_tier` | ignored; the `anthropic-beta` request header is forwarded on same-protocol passthrough |
 
 Rules: the first message must be `user` (400 `invalid_request` otherwise);
 consecutive same-role messages are accepted in order, as the API does.
@@ -718,8 +718,9 @@ same `input`, tool_result, thinking with the same text and signature) and
   `responses` → `openai-responses` and `messages` → `anthropic`; every other
   pair goes through the IR. The passthrough for `messages` relays to
   `{baseUrl}/v1/messages` (and `/v1/messages/count_tokens`), injects
-  `x-api-key` and `anthropic-version`, drops the client's own auth headers,
-  and reads usage from `message_start` / `message_delta` for the log.
+  `x-api-key` and `anthropic-version`, drops the client's own `x-api-key` and
+  `authorization` and forwards everything else, including `anthropic-beta`;
+  it reads usage from `message_start` / `message_delta` for the log.
 - `POST /v1/messages/count_tokens`: passthrough relays it; routed providers
   answer `{input_tokens}` estimated as `ceil(bytes of the concatenated text / 4)`
   plus a fixed per-image allowance, honestly labelled an estimate in the docs.
@@ -733,6 +734,9 @@ same `input`, tool_result, thinking with the same text and signature) and
   in, Messages SSE out, tool loop across two turns), passthrough to an
   Anthropic-shaped fake (bytes relayed, key injected, usage logged),
   `count_tokens` both ways, a 401 and a 529 mapped to Anthropic error bodies.
+
+**Status (2026-09-23): 6a and 6b implemented; the `/v1/messages` route, the
+messages → anthropic passthrough and `count_tokens` are in. 127 tests green.**
 
 Exit: Claude Code runs a coding task against DeepSeek (or Kimi) through
 modelplug; the round-trip property test is green; the conformance scenario

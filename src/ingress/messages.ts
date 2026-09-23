@@ -204,6 +204,25 @@ export function parseMessagesRequest(body: unknown): ParsedMessages {
   return { modelRef, turn, stream: body.stream === true, lowering };
 }
 
+/** Estimate input tokens from the lowered Messages request; this is not an exact tokenizer. */
+export function estimateInputTokens(parsed: ParsedMessages): number {
+  const turn = parsed.turn;
+  let bytes = Buffer.byteLength(turn.system ?? "", "utf8");
+  let images = 0;
+  for (const message of turn.messages) {
+    for (const part of message.content) {
+      if (part.type === "text") bytes += Buffer.byteLength(part.text, "utf8");
+      else if (part.type === "image" || part.type === "image_url") images += 1;
+    }
+  }
+  for (const tool of turn.tools ?? []) {
+    bytes += Buffer.byteLength(tool.name, "utf8");
+    bytes += Buffer.byteLength(tool.description ?? "", "utf8");
+    bytes += Buffer.byteLength(JSON.stringify(tool.parameters), "utf8");
+  }
+  return Math.ceil(bytes / 4) + images * 1500;
+}
+
 type Block = JsonObject;
 const usageJson = (usage?: Usage): JsonObject => ({
   input_tokens: Math.max(0, (usage?.inputTokens ?? 0) - (usage?.cachedInputTokens ?? 0) - (usage?.cacheWriteTokens ?? 0)),
