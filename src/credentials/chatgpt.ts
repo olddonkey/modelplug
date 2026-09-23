@@ -429,7 +429,8 @@ export function chatgptCredentials(provider: ResolvedProvider, deps: ChatgptDeps
 
 function describeWindow(fallback: string, window: QuotaWindow | undefined, now: number): string {
   const label = window?.windowMinutes === 300 ? "5h" : window?.windowMinutes === 10080 ? "weekly" : window?.windowMinutes ? `${window.windowMinutes}m` : fallback;
-  if (!window || window.usedPercent === undefined) return `${label}: n/a`;
+  // The backend sends the secondary window's headers with window-minutes 0 and an empty reset-at when the plan has none.
+  if (!window || window.usedPercent === undefined || window.windowMinutes === 0) return `${label}: n/a`;
   const reset = window.resetAt !== undefined ? `, resets in ${formatDuration(window.resetAt - now)}` : "";
   return `${label}: ${window.usedPercent}% used${reset}`;
 }

@@ -4,6 +4,7 @@ import { createServer as createHttpServer } from "node:http";
 import { parseConfig } from "../src/config.ts";
 import { describeProbe, discoveredModels, probeProvider, probeProviders } from "../src/probe.ts";
 import { createServer, modelList } from "../src/server.ts";
+import { CODEX_MODELS_CLIENT_VERSION } from "../src/wire/openai-models.ts";
 import { close, fakeUpstream, listen } from "./helpers.ts";
 
 const now = (): number => 1_000;
@@ -27,7 +28,7 @@ test("a provider that answers GET /models is reachable and its model ids are col
     assert.deepEqual(result.models, ["m-a", "m-b"]);
     assert.equal(result.detail, "2 models");
     assert.equal(seen.method, "GET");
-    assert.equal(seen.url, "/v1/models");
+    assert.equal(seen.url, "/v1/models?client_version=" + CODEX_MODELS_CLIENT_VERSION);
     assert.equal(seen.auth, "Bearer sk");
     assert.equal(seen.extra, "1");
     assert.equal(describeProbe(result), "reachable, 2 models (0ms)");

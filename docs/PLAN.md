@@ -70,6 +70,20 @@ Two backend quirks learned on the way, both handled without payload rewrites:
   `x-codex-safety-buffering-*`, and an opaque `x-codex-turn-state`. The status
   page labels windows by their minutes, not by position.
 
+**Acceptance (2026-09-23), Codex 0.155.1 through the milestone-4 pool code:**
+`login chatgpt --import`, then `codex exec` with a `-c model_providers.modelplug`
+override on port 10111 (opencodex keeps 10100): a hello turn and an `npm test`
+turn (Lite dialect, `custom_tool_call` through `exec`) both 200, usage log
+filled, status page showed the weekly window at 66%. Two backend facts learned:
+
+- `GET /models` needs `client_version=<codex version>` and gates the list by
+  it (0.0.1 sees nothing, 0.155.1 sees ten models). The response is
+  `{models:[{slug, use_responses_lite, context_window, …}]}`, not `{data}`.
+  The wire sends a named constant and parses both shapes; `check` now says
+  "reachable, 10 models" for the subscription.
+- A plan without a secondary window still gets `x-codex-secondary-*` headers
+  with `window-minutes: 0`; the status page shows that window as n/a.
+
 Exit criterion still open: a full working day on the subscription without
 switching back to opencodex, with hosted web search, compaction and
 `apply_patch` behaving exactly as with native Codex.
@@ -471,8 +485,10 @@ families; a busy port is refused), state check, ten-minute timeout, and the
 same claim parsing as the import. Import no longer pins the first account.
 89 tests green.
 
-Open, both needing a real session: one live `login chatgpt` run to confirm the
-authorize parameters (they mirror Codex's), and item 4's third clause: the 400
+Checked live (2026-09-23): OpenAI's authorize endpoint renders the login form
+with the Codex consent text for the URL `login chatgpt` builds, so the client
+id, callback and Codex parameters are accepted; the token exchange itself has
+not been run. Open: item 4's third clause: the 400
 the backend returns when a transcript carries reasoning minted by another
 account has not been recorded, so no code strips reasoning items yet. Record it
 with two accounts first; it is one named function with one fixture when it lands.

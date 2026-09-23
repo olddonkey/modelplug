@@ -172,3 +172,23 @@ test("quota headers are parsed into windows", () => {
   assert.equal(q.tertiary, undefined);
   assert.equal(parseQuotaHeaders(new Headers({ "content-type": "text/plain" }), now), undefined);
 });
+
+test("a window the plan does not have (window-minutes 0, empty reset-at) shows as n/a, not as 0% resetting now", () => {
+  const path = join(tempDir(), "credentials.json");
+  saveCredentialStore(path, { schemaVersion: 1, chatgpt: { accounts: [account()] } });
+  const creds = chatgptCredentials(provider, { storePath: path, now: () => 1_000 });
+  const headers = new Headers({
+    "x-codex-primary-used-percent": "66",
+    "x-codex-primary-window-minutes": "10080",
+    "x-codex-primary-reset-after-seconds": "293380",
+    "x-codex-secondary-used-percent": "0",
+    "x-codex-secondary-window-minutes": "0",
+    "x-codex-secondary-reset-after-seconds": "0",
+    "x-codex-secondary-reset-at": "",
+  });
+  return creds.report(target, { id: "acc-1" }, { outcome: "ok", headers }).then(() => {
+    const line = creds.status!()[0]!;
+    assert.match(line, /weekly: 66% used, resets in 3d 9h/);
+    assert.match(line, /secondary: n\/a/);
+  });
+});
