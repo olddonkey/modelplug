@@ -602,10 +602,10 @@ Forces the `Opaque` design. Specified against the Claude API as of 2026-06
    scenario in `test/conformance.test.ts`: the suite fails without one.
 7. **Docs.** `src/wire/README.md` row, README status, this section's status.
 
-**Status (2026-09-23):** steps 1 to 5 drafted (`src/wire/anthropic.ts`,
-`src/wire/effort.ts` shared with `openai-chat`, `xhigh` in the IR, preset,
-registry, `main.ts` reads the registry). Steps 6 and 7 and a review of the
-draft against this spec go through the implementation loop with Codex.
+**Status (2026-09-23):** steps 1 to 7 implemented and reviewed: wire,
+shared effort clamp, `xhigh` in the IR, preset, registry, 12 focused wire
+tests, and conformance scenarios for both routed wires. 113 tests defined.
+Live Claude acceptance awaits an API key.
 
 Exit: Codex runs the M2 task against Claude with thinking on, across at least
 three tool-calling turns, with zero `invalid signature` or

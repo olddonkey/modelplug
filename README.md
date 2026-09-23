@@ -9,8 +9,9 @@ with your ChatGPT subscription. You can read the whole thing in a day.
 > Status: pre-alpha. Two paths work end to end with real Codex: the
 > ChatGPT-subscription passthrough, and routing to any Chat Completions
 > provider (DeepSeek, Kimi, Qwen, GLM, Groq, OpenRouter, Ollama, vLLM, …).
-> `modelplug check` probes every provider. Anthropic, Gemini and the Claude
-> Code ingress are the next milestones and answer a clear error until then.
+> The Anthropic wire is in; live acceptance awaits an API key. `modelplug
+> check` probes every provider. Gemini and the Claude Code ingress are the
+> next milestones and answer a clear error until then.
 > Client setup: [docs/CLIENTS.md](docs/CLIENTS.md). Design:
 > [docs/DESIGN.md](docs/DESIGN.md), [src/wire/README.md](src/wire/README.md).
 

@@ -40,7 +40,6 @@ import type {
 import { decodeSse } from "../sse.ts";
 import { clampEffort } from "./effort.ts";
 import { retryAfterMsFrom } from "./openai-errors.ts";
-import { parseOpenaiModels } from "./openai-models.ts";
 
 export const ANTHROPIC_VERSION = "2023-06-01";
 /** Streaming leaves room; the API caps it at the model's own limit when `caps.maxOutputTokens` is unset. */
@@ -74,7 +73,7 @@ function userBlocks(message: UserMessage, caps: Capabilities): JsonObject[] {
 }
 
 function toolResultBlock(message: ToolMessage, caps: Capabilities): JsonObject {
-  const texts = message.content.filter(p => p.type === "text").map(p => p.text).filter(t => t.length > 0);
+  const texts = message.content.filter(p => p.type === "text").map(p => p.text).filter(t => t.trim().length > 0);
   const images = message.content.filter(p => p.type === "image");
   const block: JsonObject = { type: "tool_result", tool_use_id: message.callId };
   if (images.length > 0 && caps.images) {
@@ -94,8 +93,8 @@ function thinkingBlock(opaque: Opaque | undefined, provider: string): JsonObject
   if (opaque.kind !== OPAQUE_THINKING) return undefined;
   try {
     const parsed: unknown = JSON.parse(opaque.data);
-    if (!isRecord(parsed) || typeof parsed.signature !== "string") return undefined;
-    return { type: "thinking", thinking: typeof parsed.thinking === "string" ? parsed.thinking : "", signature: parsed.signature };
+    if (!isRecord(parsed) || typeof parsed.thinking !== "string" || typeof parsed.signature !== "string") return undefined;
+    return { type: "thinking", thinking: parsed.thinking, signature: parsed.signature };
   } catch {
     return undefined;
   }
@@ -190,13 +189,16 @@ export function encodeAnthropicRequest(turn: Turn, caps: Capabilities, target: P
   const effort = turn.reasoning?.effort;
   if (turn.reasoning && caps.reasoning === "effort") {
     body.thinking = { type: "adaptive", display: "summarized" };
-    if (effort) body.output_config = { effort: clampEffort(effort === "minimal" ? "low" : effort, caps.reasoningLevels) };
+    if (effort !== undefined) body.output_config = { effort: clampEffort(effort === "minimal" ? "low" : effort, caps.reasoningLevels) };
   } else if (turn.reasoning && caps.reasoning === "budget" && effort !== "minimal") {
     let budget = Math.max(MIN_BUDGET, turn.reasoning.budgetTokens ?? BUDGETS[effort ?? "medium"]);
-    if (ceiling !== undefined) budget = Math.min(budget, Math.max(MIN_BUDGET, ceiling - MIN_BUDGET));
-    // The budget must stay below max_tokens; raise the ceiling for the answer when the client asked for less.
-    if (maxTokens <= budget) maxTokens = ceiling !== undefined ? Math.min(ceiling, budget + 4096) : budget + 4096;
-    body.thinking = { type: "enabled", budget_tokens: budget };
+    if (ceiling !== undefined) budget = Math.min(budget, ceiling - MIN_BUDGET);
+    // A cap below the minimum thinking budget plus answer room cannot support thinking.
+    if (budget >= MIN_BUDGET) {
+      // The budget must stay below max_tokens; raise the ceiling for the answer when the client asked for less.
+      if (maxTokens <= budget) maxTokens = ceiling !== undefined ? Math.min(ceiling, budget + 4096) : budget + 4096;
+      body.thinking = { type: "enabled", budget_tokens: budget };
+    }
   }
   body.max_tokens = maxTokens;
 
@@ -210,8 +212,8 @@ export function encodeAnthropicRequest(turn: Turn, caps: Capabilities, target: P
   const headers: Record<string, string> = {
     "content-type": "application/json",
     accept: stream ? "text/event-stream" : "application/json",
-    "anthropic-version": ANTHROPIC_VERSION,
     ...(target.headers ?? {}),
+    "anthropic-version": ANTHROPIC_VERSION,
   };
   if (target.apiKey) headers["x-api-key"] = target.apiKey;
   return { url: `${target.baseUrl}/v1/messages`, method: "POST", headers, body: JSON.stringify(body) };
@@ -235,7 +237,7 @@ export function usageFromAnthropic(value: unknown): Usage | undefined {
   const output = num(value.output_tokens);
   const cacheRead = num(value.cache_read_input_tokens);
   const cacheWrite = num(value.cache_creation_input_tokens);
-  if (input === undefined && output === undefined) return undefined;
+  if (input === undefined && output === undefined && cacheRead === undefined && cacheWrite === undefined) return undefined;
   const usage: Usage = { inputTokens: (input ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0), outputTokens: output ?? 0 };
   if (cacheRead !== undefined) usage.cachedInputTokens = cacheRead;
   if (cacheWrite !== undefined) usage.cacheWriteTokens = cacheWrite;
@@ -243,14 +245,19 @@ export function usageFromAnthropic(value: unknown): Usage | undefined {
 }
 
 function mergeUsage(base: Usage | undefined, delta: unknown): Usage | undefined {
-  const fresh = usageFromAnthropic(delta);
-  if (!fresh) return base;
-  if (!base) return fresh;
-  const out: Usage = { ...base, outputTokens: fresh.outputTokens > 0 ? fresh.outputTokens : base.outputTokens };
-  if (fresh.inputTokens > 0) {
-    out.inputTokens = fresh.inputTokens;
-    if (fresh.cachedInputTokens !== undefined) out.cachedInputTokens = fresh.cachedInputTokens;
-    if (fresh.cacheWriteTokens !== undefined) out.cacheWriteTokens = fresh.cacheWriteTokens;
+  if (!isRecord(delta)) return base;
+  const input = num(delta.input_tokens);
+  const output = num(delta.output_tokens);
+  const cacheRead = num(delta.cache_read_input_tokens);
+  const cacheWrite = num(delta.cache_creation_input_tokens);
+  if (input === undefined && output === undefined && cacheRead === undefined && cacheWrite === undefined) return base;
+  const out: Usage = { ...(base ?? { inputTokens: 0, outputTokens: 0 }) };
+  if (output !== undefined) out.outputTokens = output;
+  if ((input !== undefined && input > 0) || (cacheRead !== undefined && cacheRead > 0) || (cacheWrite !== undefined && cacheWrite > 0)) {
+    const uncached = input !== undefined && input > 0 ? input : out.inputTokens - (out.cachedInputTokens ?? 0) - (out.cacheWriteTokens ?? 0);
+    if (cacheRead !== undefined && cacheRead > 0) out.cachedInputTokens = cacheRead;
+    if (cacheWrite !== undefined && cacheWrite > 0) out.cacheWriteTokens = cacheWrite;
+    out.inputTokens = uncached + (out.cachedInputTokens ?? 0) + (out.cacheWriteTokens ?? 0);
   }
   return out;
 }
@@ -303,8 +310,20 @@ export async function* decodeAnthropicStream(response: Response, _caps: Capabili
         case "content_block_start": {
           const index = num(data.index) ?? blocks.size;
           const block = isRecord(data.content_block) ? data.content_block : {};
-          if (block.type === "text") blocks.set(index, { kind: "text" });
-          else if (block.type === "thinking") blocks.set(index, { kind: "thinking", thinking: typeof block.thinking === "string" ? block.thinking : "", signature: typeof block.signature === "string" ? block.signature : "" });
+          if (block.type === "text") {
+            blocks.set(index, { kind: "text" });
+            if (typeof block.text === "string" && block.text.length > 0) {
+              emitted = true;
+              yield { type: "text_delta", text: block.text };
+            }
+          } else if (block.type === "thinking") {
+            const initial = typeof block.thinking === "string" ? block.thinking : "";
+            blocks.set(index, { kind: "thinking", thinking: initial, signature: typeof block.signature === "string" ? block.signature : "" });
+            if (initial.length > 0) {
+              emitted = true;
+              yield { type: "reasoning_delta", text: initial };
+            }
+          }
           else if (block.type === "redacted_thinking") blocks.set(index, { kind: "redacted", data: typeof block.data === "string" ? block.data : "" });
           else if (block.type === "tool_use") {
             const id = typeof block.id === "string" && block.id ? block.id : `toolu_${randomBytes(8).toString("hex")}`;
@@ -374,10 +393,10 @@ export async function* decodeAnthropicStream(response: Response, _caps: Capabili
       if (stopped) break;
     }
   } catch (err) {
-    yield { type: "error", error: { kind: "network", message: `stream interrupted: ${err instanceof Error ? err.message : String(err)}`, provider, retryable: false } };
+    yield { type: "error", error: { kind: "upstream", message: `the stream ended without message_stop: ${err instanceof Error ? err.message : String(err)}`, provider, retryable: !emitted } };
     return;
   }
-  if (!stopped && stopReason === undefined) {
+  if (!stopped) {
     yield { type: "error", error: { kind: "upstream", message: "the stream ended without message_stop", provider, retryable: !emitted } };
     return;
   }
@@ -423,7 +442,6 @@ export function classifyAnthropicError(status: number, headers: Headers, bodyTex
   if (status === 400 || status === 422) {
     if (/prompt is too long|too many tokens|exceeds the (context|maximum)|context window|input length/.test(lower)) return base("context_length", false);
     if (/credit balance|billing|usage limit|spending limit/.test(lower)) return base("quota", false);
-    if (/model.*(not found|does not exist|not available)/.test(lower)) return base("not_found", false);
     return base("invalid_request", false);
   }
   if (status === 529 || type === "overloaded_error") return base("overloaded", true);
@@ -440,10 +458,14 @@ export const anthropicWire: Wire = {
     return classifyAnthropicError(status, headers, bodyText, target.name);
   },
   modelsRequest(target) {
-    const headers: Record<string, string> = { accept: "application/json", "anthropic-version": ANTHROPIC_VERSION, ...(target.headers ?? {}) };
+    const headers: Record<string, string> = { accept: "application/json", ...(target.headers ?? {}), "anthropic-version": ANTHROPIC_VERSION };
     if (target.apiKey) headers["x-api-key"] = target.apiKey;
     return { url: `${target.baseUrl}/v1/models`, headers };
   },
-  // The list has the same `{data: [{id}]}` shape as the OpenAI-compatible one.
-  parseModels: parseOpenaiModels,
+  parseModels(body) {
+    if (!isRecord(body) || !Array.isArray(body.data)) return [];
+    const ids = new Set<string>();
+    for (const item of body.data) if (isRecord(item) && typeof item.id === "string" && item.id) ids.add(item.id);
+    return [...ids].sort();
+  },
 };
