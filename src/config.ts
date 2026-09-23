@@ -27,6 +27,7 @@ const presetSchema = z.strictObject({
   wire: z.enum(WIRES),
   baseUrl: z.string().optional(),
   credential: z.enum(CREDENTIAL_KINDS).optional(),
+  passthrough: z.boolean().optional(),
   capabilities: capabilitiesSchema,
   note: z.string().optional(),
 });
@@ -40,6 +41,7 @@ const providerSchema = z.strictObject({
   headers: z.record(z.string(), z.string()).optional(),
   preset: z.string().optional(),
   credential: z.enum(CREDENTIAL_KINDS).optional(),
+  passthrough: z.boolean().optional(),
   /** Pools only: how an account is picked for a new conversation. */
   strategy: z.enum(ACCOUNT_STRATEGIES).optional(),
   models: z.array(z.string().min(1)).optional(),
@@ -68,6 +70,7 @@ export interface ResolvedProvider {
   headers: Record<string, string>;
   preset?: string;
   credential: CredentialKind;
+  passthrough?: boolean;
   strategy?: AccountStrategy;
   models: string[];
   capabilities: Capabilities;
@@ -205,6 +208,8 @@ export function resolveConfig(config: Config, source: string): ResolvedConfig {
     if (p.apiKey !== undefined && p.apiKey !== "") resolved.apiKey = p.apiKey;
     if (p.preset !== undefined) resolved.preset = p.preset;
     if (p.strategy !== undefined) resolved.strategy = p.strategy;
+    const passthrough = p.passthrough ?? preset?.passthrough;
+    if (passthrough !== undefined) resolved.passthrough = passthrough;
     providers[name] = resolved;
   }
 

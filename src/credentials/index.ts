@@ -12,6 +12,7 @@ import type { WireError } from "../ir.ts";
 import type { RouteTarget } from "../route.ts";
 import { apiKeyCredentials } from "./api-key.ts";
 import { chatgptCredentials } from "./chatgpt.ts";
+import { grokCredentials } from "./grok.ts";
 import type { CredentialKind } from "./kinds.ts";
 import { defaultCredentialStorePath } from "./store.ts";
 
@@ -64,6 +65,8 @@ export interface CredentialDeps {
   fetch?: typeof fetch;
   now?: () => number;
   tokenUrl?: string;
+  discoveryUrl?: string;
+  requestTimeoutMs?: number;
   log?: (message: string) => void;
 }
 
@@ -75,6 +78,8 @@ export function credentialProviderFor(provider: ResolvedProvider, deps: Credenti
       const chatgptDeps = { storePath: deps.storePath ?? defaultCredentialStorePath(), ...stripUndefined(deps) };
       return chatgptCredentials(provider, chatgptDeps);
     }
+    case "grok":
+      return grokCredentials(provider, { storePath: deps.storePath ?? defaultCredentialStorePath(), ...stripUndefined(deps) });
   }
 }
 

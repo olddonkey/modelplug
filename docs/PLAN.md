@@ -609,6 +609,11 @@ Exit: conformance green on four wires; live acceptance when a Google key exists.
 
 ### 7d. Grok login: a third credential kind
 
+Status (2026-09-23): Grok credential, OIDC login, preset, CLI, and fake-endpoint
+tests implemented in this branch. The callback tests require loopback sockets.
+This branch does not contain 7a's Kimi kind or 7b's Responses IR path, so
+Codex-to-Grok routing remains pending 7b.
+
 xAI's Grok subscription login is an OIDC authorization-code flow with PKCE
 (public client `b1a00492-073a-47ea-816f-4c329264a828`, scope
 `openid profile email offline_access grok-cli:access api:access`, endpoints

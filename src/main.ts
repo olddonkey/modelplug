@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { ConfigError, loadConfig, loadPresets, type ResolvedConfig } from "./config.ts";
 import { defaultCodexAuthPath, importCodexAuth, tokenExpiresAt, upsertAccount } from "./credentials/chatgpt.ts";
 import { loginChatgpt } from "./credentials/chatgpt-login.ts";
+import { loginGrok } from "./credentials/grok.ts";
 import { CredentialError } from "./credentials/index.ts";
 import { CredentialStoreError, defaultCredentialStorePath, loadCredentialStore, saveCredentialStore } from "./credentials/store.ts";
 import { createPipeline } from "./pipeline.ts";
@@ -30,6 +31,8 @@ Usage:
   modelplug login chatgpt --import [--from <auth.json>]
                                                       reuse the login Codex already has (read-only)
   modelplug logout chatgpt                           forget every ChatGPT account
+  modelplug login grok                                log in to a Grok subscription through the browser
+  modelplug logout grok                               forget the Grok account
   modelplug account list|use <id>|auto|remove <id>   list, pin one, let the strategy pick, or forget
 
 Config is read from --config, $MODELPLUG_CONFIG, ./modelplug.json, or
@@ -193,7 +196,7 @@ async function check(config: ResolvedConfig, offline: boolean): Promise<void> {
       caps.stream,
     ].join(" ");
     console.log(`  ${p.name.padEnd(14)} ${p.wire.padEnd(17)} ${p.baseUrl}`);
-    const cred = p.credential === "chatgpt" ? `chatgpt accounts=${chatgptAccountCount()}` : `api-key key=${p.apiKey ? "set" : "none"}`;
+    const cred = p.credential === "chatgpt" ? `chatgpt accounts=${chatgptAccountCount()}` : p.credential === "grok" ? `grok accounts=${grokAccountCount()}` : `api-key key=${p.apiKey ? "set" : "none"}`;
     console.log(`  ${"".padEnd(14)} ${cred}${p.preset ? ` preset=${p.preset}` : ""} ${capsText}`);
     const probe = probes.get(p.name);
     if (probe) {
@@ -265,12 +268,31 @@ function chatgptAccountCount(): string {
   }
 }
 
+function grokAccountCount(): string {
+  try {
+    return String(loadCredentialStore(defaultCredentialStorePath()).grok?.accounts.length ?? 0);
+  } catch (err) {
+    return `? (${err instanceof Error ? err.message : String(err)})`;
+  }
+}
+
 const POLICY_NOTE = `Provider policy: using ChatGPT accounts through modelplug is for convenience only. It gives no
 protection from provider rate limits, enforcement, or account actions, and you are responsible
 for complying with OpenAI's terms.`;
 
 async function login(provider: string | undefined, doImport: boolean, from: string | undefined): Promise<void> {
-  if (provider !== "chatgpt") throw new ConfigError("login supports one provider today: chatgpt");
+  if (provider !== "chatgpt" && provider !== "grok") throw new ConfigError("login supports: chatgpt | grok");
+  if (provider === "grok") {
+    if (doImport || from) throw new ConfigError("login grok does not support --import or --from");
+    const storePath = defaultCredentialStorePath();
+    const store = loadCredentialStore(storePath);
+    const account = await loginGrok({ log: console.log });
+    store.grok = { accounts: [account] };
+    saveCredentialStore(storePath, store);
+    console.log(`logged in: ${account.email ?? account.id} (grok)`);
+    console.log(`stored in ${storePath} (mode 0600); access token valid until ${new Date(account.expiresAt).toISOString()}, refreshed automatically`);
+    return;
+  }
   const storePath = defaultCredentialStorePath();
   const store = loadCredentialStore(storePath);
   let account;
@@ -295,9 +317,16 @@ async function login(provider: string | undefined, doImport: boolean, from: stri
 }
 
 function logout(provider: string | undefined): void {
-  if (provider !== "chatgpt") throw new ConfigError("logout supports one provider today: chatgpt");
+  if (provider !== "chatgpt" && provider !== "grok") throw new ConfigError("logout supports: chatgpt | grok");
   const storePath = defaultCredentialStorePath();
   const store = loadCredentialStore(storePath);
+  if (provider === "grok") {
+    const count = store.grok?.accounts.length ?? 0;
+    delete store.grok;
+    saveCredentialStore(storePath, store);
+    console.log(`removed ${count} Grok account(s) from ${storePath}`);
+    return;
+  }
   const count = store.chatgpt.accounts.length;
   store.chatgpt.accounts = [];
   delete store.chatgpt.active;
@@ -311,17 +340,23 @@ function account(sub: string | undefined, id: string | undefined): void {
   switch (sub) {
     case undefined:
     case "list": {
-      if (store.chatgpt.accounts.length === 0) {
-        console.log("no ChatGPT accounts. Run: modelplug login chatgpt --import");
+      if (store.chatgpt.accounts.length === 0 && !store.grok?.accounts.length) {
+        console.log("no accounts. Run: modelplug login chatgpt --import or modelplug login grok");
         return;
       }
       for (const a of store.chatgpt.accounts) {
         const expires = tokenExpiresAt(a.accessToken);
         const marks = [a.id === store.chatgpt.active ? "pinned" : "", a.needsLogin ? "NEEDS LOGIN" : ""].filter(Boolean).join(", ");
-        console.log(`${a.id}  ${a.email ?? "-"}  ${a.planType ?? "-"}  ${a.source}  token ${expires ? (expires < Date.now() ? "expired" : `valid until ${new Date(expires).toISOString()}`) : "no expiry"}${marks ? `  [${marks}]` : ""}`);
+        console.log(`${a.id}  chatgpt  ${a.email ?? "-"}  ${a.planType ?? "-"}  ${a.source}  token ${expires ? (expires < Date.now() ? "expired" : `valid until ${new Date(expires).toISOString()}`) : "no expiry"}${marks ? `  [${marks}]` : ""}`);
       }
-      console.log(store.chatgpt.active ? "\nevery request goes to the pinned account while it is usable; `modelplug account use auto` lets the strategy pick" : "\nnew conversations pick an account by the provider's strategy (lowest-usage unless configured)");
-      console.log("quota and cooldowns are shown on the proxy's status page while it runs (http://127.0.0.1:<port>/)");
+      for (const a of store.grok?.accounts ?? []) {
+        const marks = a.needsLogin ? "NEEDS LOGIN" : "";
+        console.log(`${a.id}  grok  ${a.email ?? "-"}  -  ${a.source}  token ${a.expiresAt < Date.now() ? "expired" : `valid until ${new Date(a.expiresAt).toISOString()}`}${marks ? `  [${marks}]` : ""}`);
+      }
+      if (store.chatgpt.accounts.length > 0) {
+        console.log(store.chatgpt.active ? "\nevery request goes to the pinned account while it is usable; `modelplug account use auto` lets the strategy pick" : "\nnew conversations pick an account by the provider's strategy (lowest-usage unless configured)");
+        console.log("quota and cooldowns are shown on the proxy's status page while it runs (http://127.0.0.1:<port>/)");
+      }
       return;
     }
     case "use": {
@@ -331,16 +366,23 @@ function account(sub: string | undefined, id: string | undefined): void {
         console.log("no account pinned; the strategy picks");
         return;
       }
-      if (!id || !store.chatgpt.accounts.some(a => a.id === id)) throw new ConfigError(`account use needs an id from \`modelplug account list\`, or "auto"`);
-      store.chatgpt.active = id;
+      const chatgptMatch = store.chatgpt.accounts.some(a => a.id === id);
+      const grokMatch = store.grok?.accounts.some(a => a.id === id) ?? false;
+      if (!id || (!chatgptMatch && !grokMatch)) throw new ConfigError(`account use needs an id from \`modelplug account list\`, or "auto"`);
+      if (chatgptMatch && grokMatch) throw new ConfigError(`account id "${id}" exists in both kinds`);
+      if (grokMatch) throw new ConfigError("grok holds one account and has nothing to pin");
+      if (chatgptMatch) store.chatgpt.active = id;
       saveCredentialStore(storePath, store);
       console.log(`pinned account: ${id}`);
       return;
     }
     case "remove": {
+      if (store.chatgpt.accounts.some(a => a.id === id) && store.grok?.accounts.some(a => a.id === id)) throw new ConfigError(`account id "${id}" exists in both kinds`);
       const before = store.chatgpt.accounts.length;
       store.chatgpt.accounts = store.chatgpt.accounts.filter(a => a.id !== id);
-      if (store.chatgpt.accounts.length === before) throw new ConfigError(`no account with id "${id}"`);
+      const grokBefore = store.grok?.accounts.length ?? 0;
+      if (store.grok) store.grok.accounts = store.grok.accounts.filter(a => a.id !== id);
+      if (store.chatgpt.accounts.length === before && (store.grok?.accounts.length ?? 0) === grokBefore) throw new ConfigError(`no account with id "${id}"`);
       if (store.chatgpt.active === id) delete store.chatgpt.active;
       saveCredentialStore(storePath, store);
       console.log(`removed ${id}`);

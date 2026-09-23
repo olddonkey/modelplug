@@ -14,6 +14,15 @@ test("preset supplies wire, baseUrl and capabilities; user overrides win", () =>
   assert.equal(ds.capabilities.images, true);
 });
 
+test("grok preset resolves a subscription credential with Responses and passthrough disabled", () => {
+  const p = parseConfig({ providers: { grok: { preset: "grok" } } }, "test").providers.grok!;
+  assert.equal(p.wire, "openai-responses");
+  assert.equal(p.baseUrl, "https://api.x.ai/v1");
+  assert.equal(p.credential, "grok");
+  assert.equal(p.passthrough, false);
+  assert.deepEqual(p.capabilities.reasoningLevels, ["low", "high"]);
+});
+
 test("a wire alone has no base URL; the error names the presets that set one", () => {
   assert.throws(() => parseConfig({ providers: { a: { wire: "anthropic", apiKey: "k" } } }, "test"), /baseUrl.*required.*preset.*anthropic/);
   assert.throws(() => parseConfig({ providers: { l: { wire: "openai-chat" } } }, "test"), /baseUrl.*required/);

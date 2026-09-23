@@ -17,15 +17,29 @@ const accountSchema = z.strictObject({
   needsLogin: z.boolean().optional(),
 });
 
+const grokAccountSchema = z.strictObject({
+  id: z.string().min(1),
+  email: z.string().optional(),
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  expiresAt: z.number().finite(),
+  lastRefresh: z.string(),
+  source: z.literal("login"),
+  idToken: z.string().optional(),
+  needsLogin: z.boolean().optional(),
+});
+
 const storeSchema = z.strictObject({
   schemaVersion: z.literal(1),
   chatgpt: z.strictObject({
     accounts: z.array(accountSchema),
     active: z.string().optional(),
   }),
+  grok: z.strictObject({ accounts: z.array(grokAccountSchema) }).optional(),
 });
 
 export type ChatgptAccount = z.infer<typeof accountSchema>;
+export type GrokAccount = z.infer<typeof grokAccountSchema>;
 export type CredentialStore = z.infer<typeof storeSchema>;
 
 export class CredentialStoreError extends Error {

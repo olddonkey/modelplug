@@ -98,7 +98,15 @@ test("login: the callback code is exchanged with the PKCE verifier and becomes a
 test("login: a provider error on the callback fails the login; a busy port is refused; the exchange failing is reported", async () => {
   const port = 14556;
   await assert.rejects(
-    loginChatgpt({ port, authorizeUrl: "https://auth.example/a", tokenUrl: "http://127.0.0.1:1/t", open: async () => void (await fetch(`http://127.0.0.1:${port}${LOGIN_CALLBACK_PATH}?error=access_denied&error_description=nope`)) }),
+    loginChatgpt({ port, authorizeUrl: "https://auth.example/a", tokenUrl: "http://127.0.0.1:1/t", open: async url => {
+      const missing = await fetch(`http://127.0.0.1:${port}${LOGIN_CALLBACK_PATH}?error=access_denied&error_description=nope`);
+      assert.equal(missing.status, 400);
+      assert.match(await missing.text(), /state mismatch/);
+      const state = new URL(url).searchParams.get("state")!;
+      const failed = await fetch(`http://127.0.0.1:${port}${LOGIN_CALLBACK_PATH}?error=access_denied&error_description=nope&state=${encodeURIComponent(state)}`);
+      assert.equal(failed.status, 400);
+      await failed.text();
+    } }),
     (err: unknown) => err instanceof CredentialError && /login failed: access_denied \(nope\)/.test(err.message),
   );
 
