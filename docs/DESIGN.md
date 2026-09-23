@@ -117,7 +117,8 @@ Detailed plan with steps and exit criteria: [PLAN.md](PLAN.md).
 | 5 | `anthropic` wire | the `Opaque` design |
 | 6 | `messages` ingress | the IR under a second client |
 | 7 | `gemini` and `openai-responses` through the IR; Grok and Kimi logins | four wires, conformance green |
-| 8 | 0.1.0: compact, usage log, `check` probes, docs, npm | ship |
+| 8a | 0.1.0 release hygiene: changelog, version, package contents, README status | done (2026-09-23); usage log and `check` probes already shipped |
+| 8b | Routed `/v1/responses/compact` | parked pending a live Codex recording |
 
 ## Testing shape
 
