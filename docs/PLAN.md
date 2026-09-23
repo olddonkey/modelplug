@@ -840,10 +840,85 @@ endpoint.
 
 Exit: with a Grok subscription, `login grok` completes and Codex runs a task through `grok/<model>`; the conformance scenario of 7b covers the wire.
 
+### 7e. The Messages ingress carries tool-call Opaques
+
+7c taught the Responses ingress to carry a tool call's provider data (Gemini's
+`thoughtSignature`) through the client transcript: the call's `Opaque` rides in
+a `reasoning` item whose `encrypted_content` is our envelope with the call id
+(`encodeOpaque(opaque, callId)`), and `parseResponsesRequest` binds it back to
+the `tool_call` part with `decodeOpaqueEnvelope`. The Messages ingress (6a) only
+carries reasoning Opaques, on `thinking` signatures and `redacted_thinking`
+data; a `tool_call_end` event's `opaque` is dropped, so Claude Code routed to a
+Gemini model loses every thought signature on the replay turn.
+
+1. `src/ingress/messages.ts`, respond: on `tool_call_end` with `event.opaque`,
+   once the `tool_use` block has stopped, emit one `redacted_thinking` block
+   whose `data` is `encodeOpaque(event.opaque, call.id)` (a `content_block_start`
+   carrying the whole block, then `content_block_stop`; redacted blocks have no
+   deltas). The non-streaming message carries the same block right after its
+   `tool_use` block. Claude Code replays assistant blocks unchanged, so the
+   envelope comes back on the next turn.
+2. Parse: a `redacted_thinking` block (and a `thinking` signature) whose envelope
+   carries a call id attaches its `Opaque` to the `tool_call` part with that id,
+   looking in the current assistant message first and then in earlier assistant
+   messages, most recent first, as the Responses ingress does. No such call: the
+   block is dropped with a lowering warning. An envelope without a call id keeps
+   today's behaviour (a reasoning part with the Opaque).
+3. `src/ingress/README.md`, the `messages` row: tool-call provider data rides in a
+   `redacted_thinking` block bound to the call by our envelope.
+4. Tests, `test/ingress-messages.test.ts`: respond emits `tool_use` then a
+   `redacted_thinking` whose data decodes to the Opaque and the call id, and
+   emits no extra block when the event has no Opaque; the non-streaming message
+   carries the block; parse binds the block to the call whether it follows or
+   precedes the `tool_use` block, leaves an unbound envelope as a reasoning
+   part, and drops an envelope naming an unknown call with a warning.
+   `test/pipeline-messages.test.ts`: the apply_patch round trip through
+   `POST /v1/messages` to a fake Gemini upstream: turn 1 answers a `functionCall`
+   with `thoughtSignature: "sig-1"`; the scripted client replays the assistant
+   blocks it received plus a `tool_result`; turn 2's request carries
+   `thoughtSignature: "sig-1"` on the `functionCall` part. Existing tests stay.
+
+Exit: the Messages round trip carries the signature; `npm run check` green.
+
 ## Milestone 8: 0.1.0
 
-`POST /v1/responses/compact` for routed (non-passthrough) providers as a
-summarization turn through the routed model, after capturing what Codex sends
-and expects. Alias fallback documented honestly: failover happens before the
-first byte only. `check` network probes, usage JSONL, `docs/CLIENTS.md`,
-`CHANGELOG.md`, npm publish. Nothing from the non-goals list.
+Two units. 8a ships what is done; 8b is compaction for routed providers and
+waits for a recording only a live Codex session can produce.
+
+### 8a. Release hygiene
+
+1. `CHANGELOG.md` (Keep a Changelog shape): a `0.1.0` section listing, per
+   milestone, what a user can do: ChatGPT-subscription passthrough with an
+   account pool; Chat Completions routing verified with Kimi; the `anthropic`
+   wire; the Claude Code ingress with the messages → anthropic passthrough
+   and `count_tokens`; `openai-responses` through the IR with the
+   `passthrough` switch; the `gemini` wire; Kimi and Grok logins; `check`
+   probes; the usage log. One "Known limits" list: failover happens before
+   the first byte only; routed compaction answers 400 (8b); live acceptance
+   status per wire (which ones ran against a real provider, which are
+   spec-only).
+2. `package.json` version `0.1.0`; `npm pack --dry-run` lists only `bin/`,
+   `dist/`, `README.md`, `LICENSE`, `CHANGELOG.md` (add it to `files`), and
+   `dist/presets.json` is present; `bin/modelplug.js` starts from `dist/`.
+3. README: the status paragraph becomes the 0.1.0 summary with a pointer to
+   `CHANGELOG.md`; the quick start stays.
+4. `docs/PLAN.md`: the milestone table in `DESIGN.md` and the status lines
+   here say what shipped; `docs/CLIENTS.md` unchanged unless stale.
+5. Tests: none new; `npm run check` and `npm run build` green; a test that
+   `package.json` `files` covers `CHANGELOG.md` is not worth having.
+
+Exit: `npm pack` produces a tarball the maintainer publishes by hand
+(publishing needs the npm account; not automated).
+
+### 8b. `POST /v1/responses/compact` for routed providers
+
+Codex sends compaction requests only when a session's context is large,
+with `x-codex-beta-features: remote_compaction_v2`. Nothing has been
+recorded yet: the passthrough relays these to the ChatGPT backend untouched,
+and a routed provider answers 400 "compaction for routed providers is not
+implemented yet". Record first: an interactive Codex session through
+`modelplug start --record`, routed to `kimi/k3`, run `/compact` after a few
+tool-heavy turns; the `.request.json` shows the input shape and the 400 shows
+what Codex does with a refusal. Then spec the summarisation turn (system
+prompt, what to keep, the `compaction` output item Codex expects) against the
+recording. Until then this unit is parked.
