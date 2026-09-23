@@ -25,6 +25,11 @@ Implement `Wire` from `../ir.ts`:
 - `modelsRequest(target)` and `parseModels(body)` are optional: the GET that
   lists models and how to read its answer. `check` and `/v1/models` use them;
   nothing on the request path does.
+- `passthroughHeaders(target)` is optional: auth and protocol headers the wire
+  injects when the client and upstream speak the same protocol.
+
+The `anthropic` wire's `Opaque` carries thinking text with its signature and
+replays it to the provider that minted it, across models.
 
 ## Rules
 

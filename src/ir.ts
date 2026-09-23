@@ -14,7 +14,7 @@
 
 export type JsonObject = { [key: string]: unknown };
 
-export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "max";
+export type ReasoningEffort = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /* ------------------------------------------------------------------ input */
 
@@ -208,6 +208,13 @@ export interface Capabilities {
 /* ------------------------------------------------------- module contracts */
 
 export type WireName = "openai-chat" | "openai-responses" | "anthropic" | "gemini";
+
+/**
+ * Wires whose clients speak the dialect the public API accepts, so a provider on the same wire relays
+ * bytes unless `passthrough: false`. The Responses wire is not one: Codex's dialect fits only the
+ * ChatGPT backend, so its default follows the credential kind instead.
+ */
+export const PASSTHROUGH_WIRES: ReadonlySet<WireName> = new Set<WireName>(["anthropic"]);
 export type IngressName = "responses" | "messages";
 
 export interface ProviderTarget {
@@ -235,6 +242,8 @@ export interface Wire {
   decode(response: Response, caps: Capabilities, target: ProviderTarget): AsyncIterable<Event>;
   /** Classifies a non-2xx response from its status, headers and body text. */
   classifyError(status: number, headers: Headers, bodyText: string, target: ProviderTarget): WireError;
+  /** Optional: auth and protocol headers a same-protocol relay must inject. */
+  passthroughHeaders?(target: ProviderTarget): Record<string, string>;
   /** Optional: the GET that lists models on this wire, for `check` and `/v1/models`. Never on the request path. */
   modelsRequest?(target: ProviderTarget): { url: string; headers: Record<string, string> };
   /** Optional: model ids out of a `modelsRequest` body. */

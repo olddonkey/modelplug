@@ -3,11 +3,11 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 import { ACCOUNT_STRATEGIES, CREDENTIAL_KINDS, PASSTHROUGH_BY_DEFAULT, type AccountStrategy, type CredentialKind } from "./credentials/kinds.ts";
-import type { Capabilities, WireName } from "./ir.ts";
+import { PASSTHROUGH_WIRES, type Capabilities, type WireName } from "./ir.ts";
 
 export const WIRES = ["openai-chat", "openai-responses", "anthropic", "gemini"] as const;
 const REASONING = ["none", "effort", "budget", "reasoning_content", "toggle"] as const;
-const EFFORTS = ["minimal", "low", "medium", "high", "max"] as const;
+const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 export const capabilitiesSchema = z.strictObject({
   reasoning: z.enum(REASONING),
@@ -104,7 +104,7 @@ const WIRE_DEFAULT_CAPABILITIES: Record<WireName, Capabilities> = {
     temperature: true,
     stream: "sse",
   },
-  anthropic: { reasoning: "budget", tools: true, images: true, temperature: true, stream: "sse" },
+  anthropic: { reasoning: "effort", reasoningLevels: ["low", "medium", "high", "xhigh", "max"], tools: true, images: true, temperature: false, stream: "sse" },
   gemini: { reasoning: "budget", tools: true, images: true, temperature: true, stream: "sse" },
 };
 
@@ -203,7 +203,7 @@ export function resolveConfig(config: Config, source: string): ResolvedConfig {
       baseUrl,
       headers: p.headers ?? {},
       credential,
-      passthrough: p.passthrough ?? preset?.passthrough ?? PASSTHROUGH_BY_DEFAULT.has(credential),
+      passthrough: p.passthrough ?? preset?.passthrough ?? (PASSTHROUGH_BY_DEFAULT.has(credential) || PASSTHROUGH_WIRES.has(wire)),
       models: p.models ?? [],
       capabilities,
     };

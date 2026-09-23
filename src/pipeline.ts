@@ -1,20 +1,21 @@
 /**
  * Joins ingress, route, credentials, attempts and wires into request handlers.
  *
- * Two paths share one attempt loop: the same-protocol passthrough for Responses
- * requests to an `openai-responses` provider with passthrough enabled (bytes relayed, headers injected,
- * no payload rewrites) and the IR path for every other wire (parse, encode,
- * decode, respond). Retries happen only before the first byte reaches the client.
+ * Each ingress uses the same attempt loop for same-protocol passthrough (a provider on
+ * the ingress's own wire with `passthrough` on: bytes relayed, headers injected, no payload
+ * rewrites) and IR translation (parse, encode, decode, respond). Retries happen only before
+ * the first byte reaches the client.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { DEFAULT_ATTEMPT_POLICY, RouteExhaustedError, runAttempts, type AttemptOutcome, type AttemptPolicy } from "./attempt.ts";
 import type { ResolvedConfig, ResolvedProvider } from "./config.ts";
 import { CredentialError, credentialProviderFor, type Credential, type CredentialDeps, type CredentialProvider } from "./credentials/index.ts";
+import { estimateInputTokens, parseMessagesRequest, respondMessages, type ParsedMessages } from "./ingress/messages.ts";
 import { IngressError, parseResponsesRequest, respondResponses, type ParsedResponses } from "./ingress/responses.ts";
-import type { ErrorKind, Event, ProviderTarget, ResponseSink, Usage, WireError } from "./ir.ts";
+import type { ErrorKind, Event, ParsedIngress, ProviderTarget, ResponseSink, Usage, WireError, WireName } from "./ir.ts";
 import { forwardableHeaders, relayBody, relayableHeaders } from "./relay.ts";
 import { RouteError, resolveRoute, type RouteTarget } from "./route.ts";
-import { error as errorBody, sendJson, type BodyHandler, type Handlers } from "./server.ts";
+import { error as responsesError, sendJson, type BodyHandler, type Handlers } from "./server.ts";
 import { appendUsage, defaultUsageLogPath, usageFromResponsesPayload } from "./usage.ts";
 import { WIRES } from "./wire/index.ts";
 
@@ -71,16 +72,87 @@ interface PassthroughValue extends AttemptCommon {
   kind: "passthrough";
   upstream: Response;
 }
-interface IrValue extends AttemptCommon {
+interface IrValue<P extends ParsedIngress> extends AttemptCommon {
   kind: "ir";
   upstream: Response;
   first: Event;
   iterator: AsyncIterator<Event>;
-  parsed: ParsedResponses;
+  parsed: P;
 }
-type AttemptValue = PassthroughValue | IrValue;
+interface LocalValue<P extends ParsedIngress> {
+  kind: "local";
+  target: RouteTarget;
+  parsed: P;
+  attempt: number;
+}
+type AttemptValue<P extends ParsedIngress> = PassthroughValue | IrValue<P> | LocalValue<P>;
 
-type Route = "responses" | "compact";
+type Route = "responses" | "compact" | "messages" | "countTokens";
+type UsageProbe = { observe(chunk: Uint8Array): void; result(): Usage | undefined };
+
+interface IngressDescriptor<P extends ParsedIngress> {
+  name: "responses" | "messages";
+  modelRef(request: Record<string, unknown>): string;
+  conversationId(request: Record<string, unknown>): string | undefined;
+  refuse(request: Record<string, unknown>): string | undefined;
+  passthroughWire: WireName;
+  upstreamPath(route: Route): string;
+  parse(request: Record<string, unknown>): P;
+  respond(events: AsyncIterable<Event>, parsed: P, sink: ResponseSink, options: { now: () => number; errorStatus: (kind: ErrorKind) => number }): Promise<void>;
+  usageProbe(contentType: string): UsageProbe;
+  errorBody(kind: ErrorKind, message: string, status?: number): unknown;
+  localErrorBody(message: string, kind?: ErrorKind): unknown;
+  routedRouteError(route: Route): string | undefined;
+  estimateInputTokens?: (parsed: P) => number;
+}
+
+const readModel = (request: Record<string, unknown>): string => typeof request.model === "string" ? request.model.trim() : "";
+
+const responsesIngress: IngressDescriptor<ParsedResponses> = {
+  name: "responses",
+  modelRef: readModel,
+  conversationId: request => typeof request.prompt_cache_key === "string" ? request.prompt_cache_key : undefined,
+  refuse: request => typeof request.previous_response_id === "string" ? "previous_response_id is not supported: modelplug keeps no conversation state; send the full transcript with store: false" : undefined,
+  passthroughWire: "openai-responses",
+  upstreamPath: route => route === "compact" ? "/responses/compact" : "/responses",
+  parse: parseResponsesRequest,
+  respond: respondResponses,
+  usageProbe: createUsageProbe,
+  errorBody: (kind, message, status) => ({ error: { message, type: ERROR_TYPE[kind], code: kind, ...(status ? { upstream_status: status } : {}) } }),
+  localErrorBody: message => responsesError("invalid_request_error", message),
+  routedRouteError: route => route === "compact" ? "compaction for routed providers is not implemented yet" : undefined,
+};
+
+const messagesIngress: IngressDescriptor<ParsedMessages> = {
+  name: "messages",
+  modelRef: readModel,
+  conversationId: request => {
+    const metadata = request.metadata;
+    return metadata && typeof metadata === "object" && !Array.isArray(metadata) && typeof (metadata as Record<string, unknown>).user_id === "string"
+      ? (metadata as Record<string, string>).user_id : undefined;
+  },
+  refuse: () => undefined,
+  passthroughWire: "anthropic",
+  upstreamPath: route => route === "countTokens" ? "/v1/messages/count_tokens" : "/v1/messages",
+  parse: parseMessagesRequest,
+  respond: respondMessages,
+  usageProbe: createMessagesUsageProbe,
+  errorBody: (kind, message) => ({ type: "error", error: { type: messagesErrorType(kind), message } }),
+  localErrorBody: (message, kind = "invalid_request") => ({ type: "error", error: { type: messagesErrorType(kind), message } }),
+  routedRouteError: () => undefined,
+  estimateInputTokens,
+};
+
+function messagesErrorType(kind: ErrorKind): string {
+  switch (kind) {
+    case "auth": return "authentication_error";
+    case "rate_limit": case "quota": return "rate_limit_error";
+    case "overloaded": return "overloaded_error";
+    case "invalid_request": case "context_length": case "content_filter": return "invalid_request_error";
+    case "not_found": return "not_found_error";
+    default: return "api_error";
+  }
+}
 
 export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}): Pipeline {
   const doFetch = deps.fetch ?? fetch;
@@ -99,23 +171,22 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
     return existing;
   };
 
-  const responsesHandler = (route: Route): BodyHandler => async (body, req, res) => {
+  const handlerFor = <P extends ParsedIngress>(ingress: IngressDescriptor<P>, route: Route): BodyHandler => async (body, req, res) => {
     const started = now();
-    if (!body || typeof body !== "object" || Array.isArray(body)) return sendJson(res, 400, errorBody("invalid_request_error", "request body must be a JSON object"));
+    if (!body || typeof body !== "object" || Array.isArray(body)) return sendJson(res, 400, ingress.localErrorBody("request body must be a JSON object"));
     const request = body as Record<string, unknown>;
-    const modelRef = typeof request.model === "string" ? request.model.trim() : "";
-    if (!modelRef) return sendJson(res, 400, errorBody("invalid_request_error", "model is required"));
-    if (typeof request.previous_response_id === "string") {
-      return sendJson(res, 400, errorBody("invalid_request_error", "previous_response_id is not supported: modelplug keeps no conversation state; send the full transcript with store: false"));
-    }
+    const modelRef = ingress.modelRef(request);
+    if (!modelRef) return sendJson(res, 400, ingress.localErrorBody("model is required"));
+    const refusal = ingress.refuse(request);
+    if (refusal) return sendJson(res, 400, ingress.localErrorBody(refusal));
     let targets: RouteTarget[];
     try {
       targets = resolveRoute(config, modelRef);
     } catch (err) {
-      if (err instanceof RouteError) return sendJson(res, err.code === "unknown_provider" ? 404 : 400, errorBody("invalid_request_error", err.message));
+      if (err instanceof RouteError) return sendJson(res, err.code === "unknown_provider" ? 404 : 400, ingress.localErrorBody(err.message, err.code === "unknown_provider" ? "not_found" : "invalid_request"));
       throw err;
     }
-    const conversationId = typeof request.prompt_cache_key === "string" ? request.prompt_cache_key : undefined;
+    const conversationId = ingress.conversationId(request);
     const controller = new AbortController();
     // `res` closes when the connection dies early or when the response completes; `req` closes as
     // soon as its body has been read, which already happened before this handler ran.
@@ -124,13 +195,13 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
     };
     res.once("close", onClose);
     const clientHeaders = forwardableHeaders(req.headers);
-    const suffix = route === "compact" ? "/responses/compact" : "/responses";
+    const suffix = ingress.upstreamPath(route);
     const logUsage = (fields: { target: RouteTarget; credential: string; attempt: number; status: "ok" | "error"; kind?: string; httpStatus?: number; usage?: Usage }): void => {
       appendUsage(
         usagePath,
         {
           ts: new Date(now()).toISOString(),
-          ingress: "responses",
+          ingress: ingress.name,
           route,
           modelRef,
           provider: fields.target.provider,
@@ -147,9 +218,18 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
       );
     };
 
-    let parsedIr: ParsedResponses | undefined;
-    const attempt = async (target: RouteTarget, n: number): Promise<AttemptOutcome<AttemptValue>> => {
+    let parsedIr: P | undefined;
+    const attempt = async (target: RouteTarget, n: number): Promise<AttemptOutcome<AttemptValue<P>>> => {
       const provider = config.providers[target.provider]!;
+      if (route === "countTokens" && provider.wire !== ingress.passthroughWire && ingress.estimateInputTokens) {
+        try {
+          parsedIr ??= ingress.parse(request);
+          return { ok: true, value: { kind: "local", target, parsed: parsedIr, attempt: n } };
+        } catch (err) {
+          if (err instanceof IngressError) return { ok: false, error: { kind: "invalid_request", message: err.message, provider: "modelplug", retryable: false, status: err.status } };
+          throw err;
+        }
+      }
       const creds = credentialsFor(provider);
       let credential: Credential;
       try {
@@ -179,19 +259,17 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
 
       let upstreamUrl: string;
       let upstreamInit: RequestInit;
-      const passthrough = provider.wire === "openai-responses" && provider.passthrough;
+      const passthrough = provider.wire === ingress.passthroughWire && provider.passthrough;
       if (passthrough) {
         // Same-protocol passthrough: inject headers, relay bytes, read status and headers. No payload rewrites.
-        const headers: Record<string, string> = { ...clientHeaders, "content-type": "application/json", ...providerTarget.headers };
-        if (providerTarget.apiKey) headers.authorization = `Bearer ${providerTarget.apiKey}`;
+        const headers: Record<string, string> = { ...clientHeaders, "content-type": "application/json", ...providerTarget.headers, ...(wire.passthroughHeaders?.(providerTarget) ?? {}) };
         upstreamUrl = `${providerTarget.baseUrl}${suffix}`;
         upstreamInit = { method: "POST", headers, body: JSON.stringify({ ...request, model: target.model }), signal: controller.signal };
       } else {
-        if (route === "compact") {
-          return { ok: false, error: { kind: "invalid_request", message: "compaction for routed providers is not implemented yet", provider: provider.name, retryable: false } };
-        }
+        const routeError = ingress.routedRouteError(route);
+        if (routeError) return { ok: false, error: { kind: "invalid_request", message: routeError, provider: provider.name, retryable: false } };
         try {
-          parsedIr ??= parseResponsesRequest(request);
+          parsedIr ??= ingress.parse(request);
         } catch (err) {
           if (err instanceof IngressError) return { ok: false, error: { kind: "invalid_request", message: err.message, provider: "modelplug", retryable: false, status: err.status } };
           throw err;
@@ -241,7 +319,7 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
       return { ok: true, value: { kind: "ir", upstream, first: first.value, iterator, parsed: parsedIr!, target, credential, creds, attempt: n } };
     };
 
-    let value: AttemptValue;
+    let value: AttemptValue<P>;
     try {
       const result = await runAttempts(targets, attempt, policy, { signal: controller.signal, ...(deps.attempt?.sleep ? { sleep: deps.attempt.sleep } : {}) });
       value = result.value;
@@ -250,9 +328,7 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
       if (err instanceof RouteExhaustedError) {
         const e = err.clientError ?? { kind: "upstream" as const, message: err.message, provider: targets[0]?.provider ?? "?", retryable: false };
         if (e.retryAfterMs !== undefined) res.setHeader("retry-after", String(Math.ceil(e.retryAfterMs / 1000)));
-        return sendJson(res, ERROR_STATUS[e.kind], {
-          error: { message: `${e.provider}: ${e.message}`, type: ERROR_TYPE[e.kind], code: e.kind, ...(e.status ? { upstream_status: e.status } : {}) },
-        });
+        return sendJson(res, ERROR_STATUS[e.kind], ingress.errorBody(e.kind, `${e.provider}: ${e.message}`, e.status));
       }
       if (controller.signal.aborted) {
         if (!res.headersSent) res.statusCode = 499;
@@ -262,10 +338,14 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
       throw err;
     }
 
+    if (value.kind === "local") {
+      res.off("close", onClose);
+      return sendJson(res, 200, { input_tokens: ingress.estimateInputTokens!(value.parsed) });
+    }
     const { upstream, target, credential, creds, attempt: attemptNumber } = value;
     if (value.kind === "passthrough") {
       res.writeHead(upstream.status, relayableHeaders(upstream.headers));
-      const probe = createUsageProbe(upstream.headers.get("content-type") ?? "");
+      const probe = ingress.usageProbe(upstream.headers.get("content-type") ?? "");
       await relayBody(upstream, res, probe.observe);
       res.off("close", onClose);
       const usage = probe.result();
@@ -295,7 +375,7 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
         yield observe(next.value);
       }
     })();
-    await respondResponses(events, value.parsed, nodeSink(res), { now, errorStatus: kind => ERROR_STATUS[kind] });
+    await ingress.respond(events, value.parsed, nodeSink(res), { now, errorStatus: kind => ERROR_STATUS[kind] });
     res.off("close", onClose);
     await creds.report(target, credential, { outcome: "ok", headers: upstream.headers, ...(conversationId ? { conversationId } : {}) });
     logUsage({ target, credential: credential.id, attempt: attemptNumber, status: terminal === "error" ? "error" : "ok", httpStatus: upstream.status, ...(usage ? { usage } : {}) });
@@ -312,7 +392,12 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
   }
 
   return {
-    handlers: { responses: responsesHandler("responses"), compact: responsesHandler("compact") },
+    handlers: {
+      responses: handlerFor(responsesIngress, "responses"),
+      compact: handlerFor(responsesIngress, "compact"),
+      messages: handlerFor(messagesIngress, "messages"),
+      countTokens: handlerFor(messagesIngress, "countTokens"),
+    },
     statusLines,
     credentialProvider: credentialsFor,
   };
@@ -335,28 +420,26 @@ function nodeSink(res: ServerResponse): ResponseSink {
   };
 }
 
-/**
- * Reads `usage` out of a relayed Responses stream or JSON body without
- * buffering the stream. The Codex backend sends SSE without a content-type, so
- * the mode is sniffed from the first bytes when the header is missing.
- */
-export function createUsageProbe(contentType: string): { observe(chunk: Uint8Array): void; result(): Usage | undefined } {
+/** Shared SSE/JSON sniffing and buffering for passthrough usage probes. */
+function createProbe(contentType: string, callbacks: {
+  onSseData(data: string): void;
+  onJson(body: unknown): void;
+  result(): Usage | undefined;
+}): UsageProbe {
   const decoder = new TextDecoder("utf-8");
   const JSON_CAP = 8 * 1024 * 1024;
   let mode: "sse" | "json" | undefined = contentType.includes("text/event-stream") ? "sse" : contentType.includes("json") ? "json" : undefined;
   let buffer = "";
   let json = "";
   let jsonBytes = 0;
-  let usage: Usage | undefined;
   const scanLines = (): void => {
     let newline: number;
     while ((newline = buffer.indexOf("\n")) >= 0) {
       const line = buffer.slice(0, newline);
       buffer = buffer.slice(newline + 1);
-      if (!line.startsWith("data:") || !line.includes('"response.completed"')) continue;
+      if (!line.startsWith("data:")) continue;
       try {
-        const data = JSON.parse(line.slice(5).trim()) as { type?: string; response?: { usage?: unknown } };
-        if (data.type === "response.completed") usage = usageFromResponsesPayload(data.response?.usage) ?? usage;
+        callbacks.onSseData(line.slice(5).trim());
       } catch {
         /* partial or foreign line */
       }
@@ -391,18 +474,69 @@ export function createUsageProbe(contentType: string): { observe(chunk: Uint8Arr
       if (mode === "sse") {
         buffer += decoder.decode();
         scanLines();
-        return usage;
+        return callbacks.result();
       }
       const tail = json + decoder.decode();
       if (tail.length > 0 && jsonBytes <= JSON_CAP) {
         try {
-          const data = JSON.parse(tail) as { usage?: unknown };
-          usage = usageFromResponsesPayload(data.usage) ?? usage;
+          callbacks.onJson(JSON.parse(tail) as unknown);
         } catch {
           /* not JSON */
         }
       }
-      return usage;
+      return callbacks.result();
     },
   };
+}
+
+/**
+ * Reads `usage` out of a relayed Responses stream or JSON body without
+ * buffering the stream. The Codex backend sends SSE without a content-type, so
+ * the mode is sniffed from the first bytes when the header is missing.
+ */
+export function createUsageProbe(contentType: string): UsageProbe {
+  let usage: Usage | undefined;
+  return createProbe(contentType, {
+    onSseData(text) {
+      if (!text.includes('"response.completed"')) return;
+      const data = JSON.parse(text) as { type?: string; response?: { usage?: unknown } };
+      if (data.type === "response.completed") usage = usageFromResponsesPayload(data.response?.usage) ?? usage;
+    },
+    onJson(body) {
+      const data = body as { usage?: unknown };
+      usage = usageFromResponsesPayload(data.usage) ?? usage;
+    },
+    result: () => usage,
+  });
+}
+
+/** Read usage from a relayed Messages SSE stream or JSON response without changing its bytes. */
+export function createMessagesUsageProbe(contentType: string): UsageProbe {
+  let usage: Usage | undefined;
+  const merge = (value: unknown): void => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const u = value as Record<string, unknown>;
+    const num = (v: unknown): number | undefined => typeof v === "number" && Number.isFinite(v) ? v : undefined;
+    const input = num(u.input_tokens);
+    const output = num(u.output_tokens);
+    const read = num(u.cache_read_input_tokens);
+    const write = num(u.cache_creation_input_tokens);
+    if (input === undefined && output === undefined && read === undefined && write === undefined) return;
+    const next: Usage = { ...(usage ?? { inputTokens: 0, outputTokens: 0 }) };
+    const uncached = input !== undefined && input > 0 ? input : next.inputTokens - (next.cachedInputTokens ?? 0) - (next.cacheWriteTokens ?? 0);
+    if (read !== undefined) next.cachedInputTokens = read;
+    if (write !== undefined) next.cacheWriteTokens = write;
+    if (input !== undefined || read !== undefined || write !== undefined) next.inputTokens = uncached + (next.cachedInputTokens ?? 0) + (next.cacheWriteTokens ?? 0);
+    if (output !== undefined) next.outputTokens = output;
+    usage = next;
+  };
+  return createProbe(contentType, {
+    onSseData(text) {
+      const data = JSON.parse(text) as { type?: string; message?: { usage?: unknown }; usage?: unknown };
+      if (data.type === "message_start") merge(data.message?.usage);
+      else if (data.type === "message_delta") merge(data.usage);
+    },
+    onJson(body) { merge((body as { usage?: unknown }).usage); },
+    result: () => usage,
+  });
 }

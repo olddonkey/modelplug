@@ -192,6 +192,9 @@ export const openaiResponsesWire: Wire = {
   name: "openai-responses",
   encode: encodeResponsesRequest,
   decode: decodeResponsesStream,
+  passthroughHeaders(target) {
+    return target.apiKey ? { authorization: `Bearer ${target.apiKey}` } : {};
+  },
   classifyError(status: number, headers: Headers, bodyText: string, target: ProviderTarget): WireError {
     return classifyOpenAiError(status, headers, bodyText, target.name);
   },

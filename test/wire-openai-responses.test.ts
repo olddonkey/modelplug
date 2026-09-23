@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { Capabilities, Event, Turn } from "../src/ir.ts";
-import { classifyResponsesError, decodeResponsesStream, encodeResponsesRequest, retryAfterMsFrom, upstreamErrorMessage } from "../src/wire/openai-responses.ts";
+import { classifyResponsesError, decodeResponsesStream, encodeResponsesRequest, openaiResponsesWire, retryAfterMsFrom, upstreamErrorMessage } from "../src/wire/openai-responses.ts";
 
 const h = (init?: Record<string, string>): Headers => new Headers(init ?? {});
 
@@ -198,4 +198,9 @@ test("decode: unterminated streams are retryable only before output", async () =
     assert.equal(last.error.retryable, false);
   }
   assert.deepEqual(callOnly.map(e => e.type), ["tool_call_start", "tool_call_delta", "tool_call_end", "error"]);
+});
+
+test("passthroughHeaders injects Bearer auth only when a key is present", () => {
+  assert.deepEqual(openaiResponsesWire.passthroughHeaders?.({ name: "p", baseUrl: "https://api.example.test", apiKey: "k" }), { authorization: "Bearer k" });
+  assert.deepEqual(openaiResponsesWire.passthroughHeaders?.({ name: "p", baseUrl: "https://api.example.test" }), {});
 });

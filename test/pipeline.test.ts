@@ -43,9 +43,10 @@ async function harness(handlers: FakeHandler[], options: { tokenPort?: number } 
         local: { preset: "ollama", baseUrl: `http://127.0.0.1:${upstream.port}/v1` },
         responseskey: { wire: "openai-responses", baseUrl: `http://127.0.0.1:${upstream.port}/v1`, apiKey: "responses-test-key" },
         anth: { preset: "anthropic", apiKey: "k" },
+        goog: { preset: "google", apiKey: "k" },
       },
       defaultProvider: "chatgpt",
-      aliases: { sol: "chatgpt/gpt-5.6-sol", missing: "anth/claude" },
+      aliases: { sol: "chatgpt/gpt-5.6-sol", missing: "goog/gemini" },
     },
     "test",
   );
@@ -225,7 +226,7 @@ test("local refusals: missing model, previous_response_id, wire not served yet",
     assert.match(((await prev.json()) as { error: { message: string } }).error.message, /previous_response_id is not supported/);
     const routed = await h.post({ model: "missing" });
     assert.equal(routed.status, 400);
-    assert.match(((await routed.json()) as { error: { message: string } }).error.message, /wire "anthropic".*cannot serve yet/);
+    assert.match(((await routed.json()) as { error: { message: string } }).error.message, /wire "gemini".*cannot serve yet/);
     assert.equal(h.upstream.calls, 0);
   } finally {
     await h.stop();
