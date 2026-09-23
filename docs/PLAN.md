@@ -614,17 +614,130 @@ Needs an Anthropic API key on the dev machine; none is present today.
 
 ## Milestone 6: `messages` ingress
 
-Claude Code's protocol. Parse `system` (string or blocks), messages with
-`text`/`image`/`tool_use`/`tool_result`/`thinking`/`redacted_thinking` blocks,
-`tools`, `tool_choice`, `thinking`, `metadata`. Respond with `message_start`,
-`content_block_start/delta/stop`, `message_delta` (stop_reason + usage),
-`message_stop`, periodic `ping`. `POST /v1/messages/count_tokens` answers an
-estimate. Server-side Anthropic tools are dropped like hosted tools in M2.
-Record Claude Code traffic first with `--record --forward https://api.anthropic.com`.
+Claude Code's protocol. Specified against the Claude API as of 2026-06 (the
+`claude-api` reference) the same way milestone 5 was; recording real Claude
+Code traffic (`--record --forward https://api.anthropic.com`) needs a key and
+is acceptance work.
 
-Exit: Claude Code runs a coding task against DeepSeek through modelplug; and a
-round-trip property test shows `messages` → IR → `anthropic` wire reproduces the
-original request's blocks for text, tools and thinking.
+**Shape of the work.** Two units. 6a is the ingress module with its own tests
+and the round-trip property test; 6b generalises the pipeline so the
+`/v1/messages` route runs through the same attempt loop, adds the
+same-protocol passthrough for `messages` → `anthropic`, and `count_tokens`.
+
+### 6a. `src/ingress/messages.ts`
+
+`parse(body, headers) -> ParsedMessages` (extends `ParsedIngress`):
+
+| Messages request | IR |
+|---|---|
+| `model` | `modelRef` |
+| `system` string, or `[{type: "text", text}]` blocks | `Turn.system`, blocks joined with a blank line; `cache_control` ignored |
+| `messages[]` user, string content | `UserMessage` with one text part |
+| user blocks `text` / `image` (`source.type` base64 → `ImagePart`, url → `ImageUrlPart`) | `UserMessage` parts in order |
+| user block `tool_result` (`content` string or text/image blocks, `is_error`) | one `ToolMessage` per block, emitted **before** the user message that holds the remaining text/image blocks of the same message; `tool_use_id` → `callId`; the name is looked up from the preceding assistant `tool_use` |
+| user block `document` | 400 `unsupported` naming the block type |
+| assistant blocks `text` / `tool_use` (`input` re-serialised with `JSON.stringify` → `arguments`) | `AssistantMessage` parts |
+| assistant block `thinking {thinking, signature}` | `ReasoningPart{text: thinking, opaque}` where `opaque = decodeOpaque(signature)`; a signature that is not our envelope is dropped (the text stays) |
+| assistant block `redacted_thinking {data}` | `ReasoningPart{opaque: decodeOpaque(data)}`, dropped when foreign |
+| assistant block `fallback`, `compaction`, `server_tool_use`, `web_search_tool_result`, … | dropped with a warning in `lowering.warnings` |
+| `tools[]` without `type`, or `type: "custom"` (`name`, `description`, `input_schema`, `strict`) | `Tool` |
+| `tools[]` with an Anthropic-defined `type` (`bash_*`, `text_editor_*`, `web_search_*`, `web_fetch_*`, `computer_*`, `code_execution_*`, `tool_search_*`, `memory_*`, `mcp_toolset`, …) | dropped, listed in `lowering.droppedTools` |
+| `tool_choice` `{type: auto \| any \| tool \| none, disable_parallel_tool_use}` | `"auto"` / `"required"` / `{name}` / `"none"`; `disable_parallel_tool_use: true` → `parallelToolCalls: false` |
+| `thinking {type: "adaptive"}` + `output_config.effort` | `ReasoningRequest{effort}` (effort defaults to `"high"` when adaptive without an effort, the API's default) |
+| `thinking {type: "enabled", budget_tokens}` | `ReasoningRequest{budgetTokens, effort}` with effort from the nearest budget band (≤2048 low, ≤8192 medium, ≤16384 high, ≤24576 xhigh, else max) |
+| `thinking {type: "disabled"}` or absent | no reasoning request |
+| `output_config.format {type: "json_schema", schema}` | `ResponseFormat` |
+| `max_tokens`, `temperature`, `top_p`, `stop_sequences` | `Sampling`; `top_k` ignored |
+| `metadata.user_id` | `metadata.conversationId` (Claude Code sends a stable per-session hash) |
+| `stream` | `stream`, default false |
+| `context_management`, `mcp_servers`, `container`, `betas`, `fallbacks`, `speed`, `service_tier` | ignored; the `anthropic-beta` request header is not forwarded |
+
+Rules: the first message must be `user` (400 `invalid_request` otherwise);
+consecutive same-role messages are accepted in order, as the API does.
+Empty content is 400. Unknown block types are 400
+naming the type, like the Responses ingress. `previous_response_id`-style
+state does not exist in this protocol.
+
+`respond(events, parsed, sink)` writes the Messages SSE sequence:
+
+```
+message_start   {message: {id: msg_…, type: "message", role: "assistant", model, content: [], stop_reason: null, stop_sequence: null, usage: {input_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0, output_tokens: 0}}}
+ping
+  reasoning:  content_block_start {type: "thinking", thinking: ""} → thinking_delta* → signature_delta (encodeOpaque of the reasoning_opaque, when one arrived) → content_block_stop
+              a reasoning_opaque with no open thinking block opens one and closes it at once (display-omitted thinking)
+              kind "redacted_thinking" → content_block_start {type: "redacted_thinking", data: encodeOpaque(opaque)} → content_block_stop
+  text:       content_block_start {type: "text", text: ""} → text_delta* → content_block_stop
+  tool call:  content_block_start {type: "tool_use", id, name, input: {}} → input_json_delta* → content_block_stop
+message_delta   {delta: {stop_reason, stop_sequence: null}, usage: {input_tokens, cache_creation_input_tokens, cache_read_input_tokens, output_tokens}}
+message_stop
+```
+
+Rules that tests pin down:
+
+- `stop_reason` mapping: `end_turn` → `end_turn`, `tool_use` → `tool_use`,
+  `max_tokens` → `max_tokens`, `content_filter` → `refusal`, `cancelled` →
+  `end_turn`.
+- Every event is an SSE frame with `event: <type>` and one `data:` line;
+  block `index` counts from 0 per message.
+- An `error` event after output has started closes nothing: the stream ends
+  with `event: error` `{type: "error", error: {type, message}}` where `type`
+  is the Anthropic error type for the kind (`overloaded_error`, `api_error`,
+  `rate_limit_error`, `authentication_error`, `invalid_request_error`,
+  `permission_error`, `not_found_error`; `context_length` → `invalid_request_error`).
+- An error before any output is not streamed: JSON `{type: "error", error}`
+  with the HTTP status from the pipeline's kind table.
+- A `tool_call` whose arguments fail `JSON.parse` at `tool_call_end` ends the
+  stream with an `error` event (`invalid_request_error`, "the model returned
+  tool arguments that are not valid JSON"); nothing is forwarded as a call.
+- `stream: false` collects and returns the final message object with the
+  same `content` blocks, `stop_reason` and `usage`.
+- Usage: `input_tokens` = IR `inputTokens` minus cache reads and writes (the
+  API's convention), the two cache counts as given, `output_tokens`.
+
+Tests: `test/ingress-messages.test.ts` — parse tests for each row above
+(synthetic requests in Claude Code's shape: system blocks with
+`cache_control`, a tool loop with parallel `tool_use` and two `tool_result`
+blocks followed by text, thinking blocks with our envelope and with a
+foreign signature, an Anthropic-defined tool, `disable_parallel_tool_use`,
+adaptive thinking with effort, budget thinking), respond tests (text only;
+thinking with signature; display-omitted thinking; tool call; parallel tool
+calls; max_tokens; refusal; error after text; error before output;
+unparseable arguments; non-streaming), and the **round-trip property**: for
+several generated Messages requests, `parse` → `encodeAnthropicRequest`
+reproduces the original `system`, `messages` blocks (text, tool_use with the
+same `input`, tool_result, thinking with the same text and signature) and
+`tools` up to the fields the wire adds (`eager_input_streaming`,
+`cache_control`, `max_tokens`).
+
+### 6b. Pipeline: the `/v1/messages` route
+
+- `src/pipeline.ts` gets one handler factory parameterised by ingress:
+  `parse`/`respond` come from the ingress; the model ref, the conversation id
+  (`prompt_cache_key` for Responses, `metadata.user_id` for Messages) and the
+  passthrough decision are the only per-ingress facts. Passthrough matrix:
+  `responses` → `openai-responses` and `messages` → `anthropic`; every other
+  pair goes through the IR. The passthrough for `messages` relays to
+  `{baseUrl}/v1/messages` (and `/v1/messages/count_tokens`), injects
+  `x-api-key` and `anthropic-version`, drops the client's own auth headers,
+  and reads usage from `message_start` / `message_delta` for the log.
+- `POST /v1/messages/count_tokens`: passthrough relays it; routed providers
+  answer `{input_tokens}` estimated as `ceil(bytes of the concatenated text / 4)`
+  plus a fixed per-image allowance, honestly labelled an estimate in the docs.
+- Error bodies for the Messages route use the Anthropic shape
+  `{type: "error", error: {type, message}}`; the status table is shared.
+- `usage.jsonl` records `ingress: "messages"`.
+- `modelplug print claude` stays as is; `docs/CLIENTS.md` loses its "501
+  until milestone 6" note and gains the passthrough sentence.
+- Tests: `test/pipeline-messages.test.ts` through the HTTP shell with a fake
+  upstream — IR path to a Chat Completions fake (Claude Code-shaped request
+  in, Messages SSE out, tool loop across two turns), passthrough to an
+  Anthropic-shaped fake (bytes relayed, key injected, usage logged),
+  `count_tokens` both ways, a 401 and a 529 mapped to Anthropic error bodies.
+
+Exit: Claude Code runs a coding task against DeepSeek (or Kimi) through
+modelplug; the round-trip property test is green; the conformance scenario
+still runs per wire. Recording real Claude Code traffic and the live run need
+an Anthropic key or a Claude Code install pointed at the proxy.
 
 ## Milestone 7: `gemini`, `openai-responses` through the IR, Grok and Kimi logins
 
