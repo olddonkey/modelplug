@@ -107,7 +107,7 @@ test("connection refused and a silent server are unreachable within the timeout"
 });
 
 test("wires without a model list and credential kinds without an account are reported, not probed", async () => {
-  const config = parseConfig({ providers: { a: { preset: "anthropic", apiKey: "k" }, c: { preset: "chatgpt" } } }, "test");
+  const config = parseConfig({ providers: { a: { preset: "google", apiKey: "k" }, c: { preset: "chatgpt" } } }, "test");
   let fetched = 0;
   const results = await probeProviders(config, {
     now,

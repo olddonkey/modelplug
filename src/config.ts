@@ -7,7 +7,7 @@ import type { Capabilities, WireName } from "./ir.ts";
 
 export const WIRES = ["openai-chat", "openai-responses", "anthropic", "gemini"] as const;
 const REASONING = ["none", "effort", "budget", "reasoning_content", "toggle"] as const;
-const EFFORTS = ["minimal", "low", "medium", "high", "max"] as const;
+const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 export const capabilitiesSchema = z.strictObject({
   reasoning: z.enum(REASONING),
@@ -101,7 +101,7 @@ const WIRE_DEFAULT_CAPABILITIES: Record<WireName, Capabilities> = {
     temperature: true,
     stream: "sse",
   },
-  anthropic: { reasoning: "budget", tools: true, images: true, temperature: true, stream: "sse" },
+  anthropic: { reasoning: "effort", reasoningLevels: ["low", "medium", "high", "xhigh", "max"], tools: true, images: true, temperature: false, stream: "sse" },
   gemini: { reasoning: "budget", tools: true, images: true, temperature: true, stream: "sse" },
 };
 

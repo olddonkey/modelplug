@@ -11,6 +11,7 @@ import { createRecorder, forwardHandler, withRecording } from "./record.ts";
 import { RouteError, resolveRoute } from "./route.ts";
 import { createServer, notImplementedHandler, ROUTE_PATHS, type Handlers } from "./server.ts";
 import { defaultUsageLogPath } from "./usage.ts";
+import { WIRES } from "./wire/index.ts";
 
 const VERSION = (JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }).version;
 
@@ -163,7 +164,7 @@ async function start(config: ResolvedConfig, portFlag: string | undefined, optio
     console.log(`usage log: ${config.usageLog ? defaultUsageLogPath() : "off"}`);
     const chatgpt = Object.values(config.providers).filter(p => p.credential === "chatgpt").map(p => p.name);
     if (chatgpt.length > 0) console.log(`chatgpt passthrough: ${chatgpt.join(", ")}  (accounts and quota: http://${config.host}:${port}/)`);
-    const missing = Object.values(config.providers).filter(p => p.wire !== "openai-responses" && p.wire !== "openai-chat").map(p => `${p.name} (${p.wire})`);
+    const missing = Object.values(config.providers).filter(p => !WIRES[p.wire]).map(p => `${p.name} (${p.wire})`);
     if (missing.length > 0) console.log(`not served yet in this build: ${missing.join(", ")}`);
     console.log("note: /v1/messages answers 501 until the messages ingress lands.");
   }

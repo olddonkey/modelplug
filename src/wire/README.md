@@ -26,6 +26,9 @@ Implement `Wire` from `../ir.ts`:
   lists models and how to read its answer. `check` and `/v1/models` use them;
   nothing on the request path does.
 
+The `anthropic` wire's `Opaque` carries thinking text with its signature and
+replays it to the provider that minted it, across models.
+
 ## Rules
 
 - No retries, no backoff, no credential selection. Those live in `attempt.ts`
