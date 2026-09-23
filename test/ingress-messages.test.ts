@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { Capabilities, Event, ResponseSink } from "../src/ir.ts";
 import { parseMessagesRequest, respondMessages } from "../src/ingress/messages.ts";
-import { encodeOpaque, IngressError } from "../src/ingress/responses.ts";
+import { decodeOpaqueEnvelope, encodeOpaque, IngressError } from "../src/ingress/responses.ts";
 import { encodeAnthropicRequest } from "../src/wire/anthropic.ts";
 
 const base = (extra: Record<string, unknown> = {}) => ({ model: "m", messages: [{ role: "user", content: "hi" }], ...extra });
@@ -58,6 +58,58 @@ test("parse: thinking envelope survives, foreign signatures and redacted blocks 
     { type: "text", text: "answer" },
   ] });
   assert.equal(parsed.lowering.warnings.length, 6);
+});
+
+test("parse: call-bound envelopes attach before or after tool_use and prefer the current assistant", () => {
+  const opaque = { provider: "p", kind: "thought_signature", data: "sig-1" };
+  const envelope = encodeOpaque(opaque, "call-1");
+  for (const bound of [
+    [{ type: "tool_use", id: "call-1", name: "apply_patch", input: {} }, { type: "redacted_thinking", data: envelope }],
+    [{ type: "redacted_thinking", data: envelope }, { type: "tool_use", id: "call-1", name: "apply_patch", input: {} }],
+    [{ type: "thinking", thinking: "hidden", signature: envelope }, { type: "tool_use", id: "call-1", name: "apply_patch", input: {} }],
+  ]) {
+    const parsed = parseMessagesRequest(base({ messages: [
+      { role: "user", content: "patch" },
+      { role: "assistant", content: [{ type: "tool_use", id: "call-1", name: "old", input: {} }] },
+      { role: "assistant", content: bound },
+    ] }));
+    assert.deepEqual(parsed.turn.messages[1], { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "old", arguments: "{}" }] });
+    assert.deepEqual(parsed.turn.messages[2], { role: "assistant", content: [
+      ...(bound[0]?.type === "thinking" ? [{ type: "reasoning", text: "hidden" }] : []),
+      { type: "tool_call", id: "call-1", name: "apply_patch", arguments: "{}", opaque },
+    ] });
+    assert.deepEqual(parsed.lowering.warnings, []);
+  }
+  const earlier = parseMessagesRequest(base({ messages: [
+    { role: "user", content: "patch" },
+    { role: "assistant", content: [{ type: "tool_use", id: "call-1", name: "old", input: {} }] },
+    { role: "assistant", content: [{ type: "tool_use", id: "call-1", name: "new", input: {} }] },
+    { role: "assistant", content: [{ type: "redacted_thinking", data: envelope }] },
+  ] }));
+  assert.deepEqual(earlier.turn.messages[1], { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "old", arguments: "{}" }] });
+  assert.deepEqual(earlier.turn.messages[2], { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "new", arguments: "{}", opaque }] });
+  assert.deepEqual(earlier.lowering.warnings, []);
+});
+
+test("parse: unbound envelopes remain reasoning; unknown call ids are dropped with warnings", () => {
+  const opaque = { provider: "p", kind: "thought_signature", data: "sig-1" };
+  const unbound = encodeOpaque(opaque);
+  const unknown = encodeOpaque(opaque, "missing");
+  const parsed = parseMessagesRequest(base({ messages: [
+    { role: "user", content: "patch" },
+    { role: "assistant", content: [
+      { type: "redacted_thinking", data: unbound },
+      { type: "thinking", thinking: "visible", signature: unbound },
+      { type: "redacted_thinking", data: unknown },
+      { type: "thinking", thinking: "dropped", signature: unknown },
+    ] },
+  ] }));
+  assert.deepEqual(parsed.turn.messages[1], { role: "assistant", content: [
+    { type: "reasoning", opaque },
+    { type: "reasoning", text: "visible", opaque },
+  ] });
+  assert.equal(parsed.lowering.warnings.length, 2);
+  assert.ok(parsed.lowering.warnings.every(warning => warning.includes("missing")));
 });
 
 test("parse: tools, choice, adaptive and budget reasoning, format", () => {
@@ -150,6 +202,43 @@ test("respond: tool call and parallel tool calls preserve JSON input and indices
   ]);
   assert.deepEqual(c.frames().filter(f => f.event === "content_block_delta").map(f => (f.data.delta as Record<string, unknown>).partial_json), ['{"cmd":', '"ls"}', '{"path":"a"}']);
   assert.deepEqual(c.frames().at(-2)!.data.delta, { stop_reason: "tool_use", stop_sequence: null });
+});
+
+test("respond: tool-call Opaque follows its tool_use block in SSE and non-streaming output", async () => {
+  const opaque = { provider: "p", model: "m", kind: "thought_signature", data: "sig-1" };
+  const events: Event[] = [
+    { type: "tool_call_start", id: "call-1", name: "apply_patch" },
+    { type: "tool_call_delta", id: "call-1", argumentsDelta: '{"input":"patch"}' },
+    { type: "tool_call_end", id: "call-1", opaque },
+    done("tool_use"),
+  ];
+  const streamed = await emitted(events);
+  const blocks = streamed.frames().filter(frame => frame.event === "content_block_start");
+  assert.deepEqual(blocks.map(frame => (frame.data.content_block as Record<string, unknown>).type), ["tool_use", "redacted_thinking"]);
+  const redacted = blocks[1]!.data.content_block as { data: string };
+  assert.deepEqual(decodeOpaqueEnvelope(redacted.data), { opaque, callId: "call-1" });
+  assert.deepEqual(streamed.frames().filter(frame => frame.event.startsWith("content_block_")).map(frame => frame.event), [
+    "content_block_start", "content_block_delta", "content_block_stop", "content_block_start", "content_block_stop",
+  ]);
+  const plain = await emitted(events, false);
+  const message = JSON.parse(plain.text()) as { content: Array<Record<string, unknown>> };
+  assert.deepEqual(message.content, [
+    { type: "tool_use", id: "call-1", name: "apply_patch", input: { input: "patch" } },
+    { type: "redacted_thinking", data: redacted.data },
+  ]);
+  const noOpaque = await emitted(events.map(event => event.type === "tool_call_end" ? { type: "tool_call_end", id: event.id } : event));
+  assert.deepEqual(noOpaque.frames().filter(frame => frame.event === "content_block_start").map(frame => (frame.data.content_block as Record<string, unknown>).type), ["tool_use"]);
+  const parallel = await emitted([
+    { type: "tool_call_start", id: "first", name: "apply_patch" },
+    { type: "tool_call_start", id: "second", name: "apply_patch" },
+    { type: "tool_call_end", id: "second", opaque },
+    { type: "tool_call_end", id: "first" },
+    done("tool_use"),
+  ]);
+  assert.deepEqual(parallel.frames().filter(frame => frame.event === "content_block_start").map(frame => {
+    const block = frame.data.content_block as Record<string, unknown>;
+    return block.type === "tool_use" ? block.id : decodeOpaqueEnvelope(block.data as string)?.callId;
+  }), ["first", "second", "second"]);
 });
 
 test("respond: max_tokens, refusal and cancelled stop mapping", async () => {

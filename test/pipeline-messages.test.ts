@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseConfig } from "../src/config.ts";
 import { estimateInputTokens, parseMessagesRequest } from "../src/ingress/messages.ts";
+import { decodeOpaqueEnvelope } from "../src/ingress/responses.ts";
 import { createMessagesUsageProbe, createPipeline } from "../src/pipeline.ts";
 import { createServer } from "../src/server.ts";
 import { close, fakeUpstream, listen, parseSseText, type FakeHandler } from "./helpers.ts";
@@ -129,6 +130,75 @@ test("Messages IR translates system, tools and replayed tool results, then retur
       assert.deepEqual(line.usage, { inputTokens: 40, outputTokens: 1 });
     }
   } finally { await h.stop(); }
+});
+
+test("Messages apply_patch round trip replays a tool-call Opaque to the upstream", async () => {
+  const patch = "*** Begin Patch\n*** Add File: note.txt\n+done\n*** End Patch";
+  const upstream = await fakeUpstream([
+    (req, res, body) => {
+      assert.equal(req.url, "/v1beta/models/m:streamGenerateContent?alt=sse");
+      const sent = JSON.parse(body) as { tools: Array<{ functionDeclarations: Array<{ name: string }> }> };
+      assert.equal(sent.tools[0]?.functionDeclarations[0]?.name, "apply_patch");
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end([
+        { candidates: [{ content: { parts: [{ functionCall: { name: "apply_patch", args: { input: patch } }, thoughtSignature: "sig-1" }] } }] },
+        { candidates: [{ finishReason: "STOP" }] },
+      ].map(frame => `data: ${JSON.stringify(frame)}\n\n`).join(""));
+    },
+    (_req, res, body) => {
+      const sent = JSON.parse(body) as { contents: Array<{ role: string; parts: Array<Record<string, any>> }> };
+      const assistant = sent.contents.find(item => item.role === "model" && item.parts.some(part => part.functionCall));
+      assert.ok(assistant);
+      const call = assistant.parts.find(part => part.functionCall);
+      assert.deepEqual(call?.functionCall, { name: "apply_patch", args: { input: patch } });
+      assert.equal(call.thoughtSignature, "sig-1");
+      const result = sent.contents[sent.contents.indexOf(assistant) + 1];
+      assert.equal(result?.role, "user");
+      assert.deepEqual(result.parts[0]?.functionResponse, { name: "apply_patch", response: { output: "applied" } });
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(`data: ${JSON.stringify({ candidates: [{ content: { parts: [{ text: "done" }] }, finishReason: "STOP" }] })}\n\n`);
+    },
+  ]);
+  const config = parseConfig({ providers: { g: { wire: "gemini", baseUrl: `http://127.0.0.1:${upstream.port}`, apiKey: "k" } } }, "test");
+  const pipeline = createPipeline(config, { usageLogPath: null, log: () => {}, attempt: { policy: { maxAttemptsPerTarget: 1, baseDelayMs: 0, maxDelayMs: 0 } } });
+  const server = createServer(config, pipeline.handlers, "test");
+  const port = await listen(server);
+  const post = async (messages: unknown) => {
+    const response = await fetch(`http://127.0.0.1:${port}/v1/messages`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(request("g/m", {
+      messages, stream: true, tools: [{ name: "apply_patch", input_schema: { type: "object", properties: { input: { type: "string" } }, required: ["input"] } }],
+    })) });
+    const body = await response.text();
+    assert.equal(response.status, 200, body);
+    return parseSseText(body);
+  };
+  try {
+    const first = await post([{ role: "user", content: "Apply the patch" }]);
+    const blocks: Array<Record<string, any>> = [];
+    for (const frame of first) {
+      if (frame.type === "content_block_start") blocks[frame.data.index] = structuredClone(frame.data.content_block);
+      if (frame.type === "content_block_delta" && frame.data.delta.type === "input_json_delta") {
+        const block = blocks[frame.data.index]!;
+        block.inputJson = (block.inputJson ?? "") + frame.data.delta.partial_json;
+      }
+      if (frame.type === "content_block_stop") {
+        const block = blocks[frame.data.index]!;
+        if (block.type === "tool_use") {
+          block.input = JSON.parse(block.inputJson);
+          delete block.inputJson;
+        }
+      }
+    }
+    assert.deepEqual(blocks.map(block => block.type), ["tool_use", "redacted_thinking"]);
+    assert.deepEqual(blocks[0]?.input, { input: patch });
+    assert.deepEqual(decodeOpaqueEnvelope(blocks[1]!.data), { opaque: { provider: "g", kind: "thought_signature", data: "sig-1" }, callId: blocks[0]!.id });
+    const second = await post([
+      { role: "user", content: "Apply the patch" },
+      { role: "assistant", content: blocks },
+      { role: "user", content: [{ type: "tool_result", tool_use_id: blocks[0]!.id, content: "applied" }] },
+    ]);
+    assert.equal(second.filter(frame => frame.type === "content_block_delta").map(frame => frame.data.delta.text).join(""), "done");
+    assert.equal(upstream.calls, 2);
+  } finally { await close(server); await close(upstream.server); }
 });
 
 test("Messages passthrough injects its key, relays SSE bytes and logs cache-inclusive usage", async () => {
