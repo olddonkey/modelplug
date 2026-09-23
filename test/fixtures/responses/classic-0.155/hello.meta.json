@@ -1,0 +1,25 @@
+{
+  "request": {
+    "headers": {
+      "x-codex-beta-features": "remote_compaction_v2",
+      "x-codex-window-id": "00000000-0000-4000-8000-000000000004:0",
+      "x-codex-turn-metadata": "{\"installation_id\":\"00000000-0000-4000-8000-000000000006\",\"session_id\":\"00000000-0000-4000-8000-000000000004\",\"thread_id\":\"00000000-0000-4000-8000-000000000004\",\"agent_name\":\"/root\",\"turn_id\":\"00000000-0000-4000-8000-000000000005\",\"window_id\":\"00000000-0000-4000-8000-000000000004:0\",\"window_number\":0,\"context_window_id\":\"00000000-0000-4000-8000-000000000007\",\"request_kind\":\"turn\",\"root_turn_id\":\"00000000-0000-4000-8000-000000000005\",\"thread_source\":\"user\",\"sandbox\":\"seatbelt\",\"sandbox_mode\":\"workspace-write\",\"auto_review_enabled\":false,\"node_repl_auto_review_required\":false,\"node_repl_disabled\":false,\"workspaces\":{\"/workspace\":{\"latest_git_commit_hash\":\"91e9722422161bf445048af8cd36854ec520a69a\",\"has_changes\":true}},\"turn_started_at_unix_ms\":1790151060447}",
+      "x-client-request-id": "00000000-0000-4000-8000-000000000004",
+      "session-id": "00000000-0000-4000-8000-000000000004",
+      "thread-id": "00000000-0000-4000-8000-000000000004",
+      "accept": "text/event-stream",
+      "content-type": "application/json",
+      "originator": "codex_exec",
+      "user-agent": "codex_exec/0.155.1 (Mac OS 27.0.0; arm64) unknown (codex_exec; 0.155.1)",
+      "host": "127.0.0.1:10111",
+      "content-length": "76903"
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache"
+    }
+  }
+}

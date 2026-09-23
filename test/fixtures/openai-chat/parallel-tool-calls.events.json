@@ -1,0 +1,114 @@
+[
+  {
+    "type": "reasoning_delta",
+    "text": "User"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " wants current"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " directory listing and current"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " date using"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " two separate exec_command"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " calls. They're"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " independent, so"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " call in"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " same"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " block."
+  },
+  {
+    "type": "tool_call_start",
+    "id": "tool_2HE2SloNKQ15JsmRNTYYTld1",
+    "name": "exec_command"
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_2HE2SloNKQ15JsmRNTYYTld1",
+    "argumentsDelta": "{"
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_2HE2SloNKQ15JsmRNTYYTld1",
+    "argumentsDelta": "\"cmd\":\""
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_2HE2SloNKQ15JsmRNTYYTld1",
+    "argumentsDelta": "ls -la"
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_2HE2SloNKQ15JsmRNTYYTld1",
+    "argumentsDelta": "\""
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_2HE2SloNKQ15JsmRNTYYTld1",
+    "argumentsDelta": "}"
+  },
+  {
+    "type": "tool_call_start",
+    "id": "tool_3ccUjOYl5OtqH38Xv4adin0z",
+    "name": "exec_command"
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_3ccUjOYl5OtqH38Xv4adin0z",
+    "argumentsDelta": "{"
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_3ccUjOYl5OtqH38Xv4adin0z",
+    "argumentsDelta": "\"cmd\":\""
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_3ccUjOYl5OtqH38Xv4adin0z",
+    "argumentsDelta": "date\""
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_3ccUjOYl5OtqH38Xv4adin0z",
+    "argumentsDelta": "}"
+  },
+  {
+    "type": "tool_call_end",
+    "id": "tool_2HE2SloNKQ15JsmRNTYYTld1"
+  },
+  {
+    "type": "tool_call_end",
+    "id": "tool_3ccUjOYl5OtqH38Xv4adin0z"
+  },
+  {
+    "type": "done",
+    "stopReason": "tool_use",
+    "usage": {
+      "inputTokens": 216,
+      "outputTokens": 108,
+      "reasoningTokens": 24
+    }
+  }
+]

@@ -1,0 +1,207 @@
+[
+  {
+    "type": "reasoning_delta",
+    "text": "The"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " user"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " asks"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " for"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " "
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "17"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "*"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "23"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " and"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " wants"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " just"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " the"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " number"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "."
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " Need"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " compute"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "."
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " "
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "17"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "*"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "23"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " ="
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " "
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "17"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "*"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "20"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " +"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "17"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "*"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "3"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "="
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "340"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "+"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "51"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "="
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "391"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "."
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " Need"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " final"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " answer"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " only"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " number"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "."
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " Ensure"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " no"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " extra"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " explanation"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "."
+  },
+  {
+    "type": "text_delta",
+    "text": "391"
+  },
+  {
+    "type": "done",
+    "stopReason": "end_turn",
+    "usage": {
+      "inputTokens": 105,
+      "outputTokens": 65,
+      "reasoningTokens": 49
+    }
+  }
+]

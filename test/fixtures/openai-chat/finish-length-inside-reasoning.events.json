@@ -1,0 +1,23 @@
+[
+  {
+    "type": "reasoning_delta",
+    "text": "Write"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " a paragraph"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " about the"
+  },
+  {
+    "type": "done",
+    "stopReason": "max_tokens",
+    "usage": {
+      "inputTokens": 93,
+      "outputTokens": 8,
+      "reasoningTokens": 5
+    }
+  }
+]

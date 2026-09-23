@@ -28,5 +28,13 @@ OpenAI model names receive and is what milestone 3 passes through untouched.
 | `lite/image-turn` | `input_image` in the Lite dialect. |
 | `lite/request-headers.json` | Includes `x-openai-internal-codex-responses-lite: true`. |
 
+`classic-0.155/` was recorded 2026-09-23 with Codex 0.155.1 through modelplug
+to a routed Kimi model (Chat Completions), sanitized the same way:
+
+| Fixture | Shows |
+|---|---|
+| `classic-0.155/hello` | The classic catalog now carries code mode's `exec` as a `custom` tool (lark grammar) beside `wait`, `request_user_input`, `request_user_input_async`, the `clock` and `mcp__*` namespaces and a hosted `web_search`. |
+| `classic-0.155/turn-2-after-exec` | The replayed `custom_tool_call` named `exec` whose input is JavaScript, its string output, and the reasoning item modelplug emitted (summary text, no `encrypted_content`). Request and headers only: the response streamed a path split across deltas that the sanitizer cannot catch. |
+
 Re-record after a Codex upgrade with the commands in `docs/PLAN.md`, step 0.
 Never point a test at a live endpoint.

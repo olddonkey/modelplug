@@ -1,0 +1,78 @@
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":"Need"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" final"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" concise"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":"."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" Mention"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" Kimi developed"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" by Moonshot AI"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" naturally as"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" instructed"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":". One short sentence"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":". Ensure no"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" extra. Could"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" say:"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" \""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":"I’m Kimi"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":", an AI assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" developed by Moonshot"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" AI, here to"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" help with answers"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":","},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" writing, coding,"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" and ideas"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":".\" That's"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" one sentence,"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" shortish"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":". Need final"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":" only."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"reasoning_content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"content":"I’m Kimi"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"content":", an AI assistant"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"content":" developed by Moonshot"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"content":" AI, here to"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"content":" help with answers,"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"content":" writing, coding,"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{"content":" and ideas."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[{"index":0,"delta":{},"finish_reason":"stop","usage":{"prompt_tokens":94,"completion_tokens":108,"total_tokens":202,"completion_tokens_details":{"reasoning_tokens":66},"prompt_tokens_details":{}}}]}
+
+data: {"id":"chatcmpl-CEBr9vKg3UVOE1lhly75QY9t","object":"chat.completion.chunk","created":1790151176,"model":"k3","choices":[],"usage":{"prompt_tokens":94,"completion_tokens":108,"total_tokens":202,"completion_tokens_details":{"reasoning_tokens":66},"prompt_tokens_details":{}}}
+
+data: [DONE]
+

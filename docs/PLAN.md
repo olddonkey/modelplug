@@ -103,11 +103,32 @@ lines); `custom_tool_call_input.delta` now streams raw input text like the
 native backend, decoded progressively out of the lowered arguments;
 `docs/CLIENTS.md` is written. 77 tests green.
 
-Still open from the exit criterion below, all needing live keys: the DeepSeek
-and Kimi acceptance runs with `apply_patch` and `view_image` turns, the two
-step-4 decisions (`reasoning_content` replay, `max_tokens` naming), and the
-step-5 golden fixtures recorded from real APIs (the decode tests use inline
-synthetic frames until then).
+**Acceptance (2026-09-23), Codex 0.155.1 → modelplug → Kimi K3
+(`api.kimi.com/coding/v1`, the subscription token, Chat Completions):** a hello
+turn, an `npm test` turn through the shell, and an `apply_patch` turn that
+edited README.md and re-ran the tests: eight requests, all 200, usage log with
+reasoning tokens. The `view_image` turn carried the base64 `input_image`
+through the ingress, but the borrowed token expired before Kimi answered
+(401), so that answer is the one turn still unverified. Learned on the way:
+
+- Codex 0.155.1's **classic** dialect declares code mode's `exec` as a
+  `custom` tool (lark grammar) beside `wait`, `request_user_input*`, the
+  `clock` and `mcp__*` namespaces and `web_search`; the model calls the
+  lowered `exec` with JavaScript and Codex's host runs it. The generic
+  custom-tool lowering carried it unchanged; the "dormant" remark under the
+  step-0 consequences is void. Fixtures: `test/fixtures/responses/classic-0.155/`.
+- Step-4 decision 1 for Kimi: the tool loop ran across turns with reasoning
+  text never replayed, so no `reasoning_content` replay is needed there.
+  DeepSeek is still unmeasured (no key).
+- Step-5 golden fixtures recorded from Kimi: `test/fixtures/openai-chat/`,
+  five streams including `finish_reason: length` spent entirely on reasoning;
+  each is decoded whole and in seven-byte chunks.
+
+Still open: the DeepSeek run, the `view_image` answer, `max_tokens` naming
+(Codex never sends `max_output_tokens`, so it has not mattered), and a Kimi
+login credential kind so the subscription token refreshes itself (planned for
+milestone 7; worth pulling forward, the maintainer has a subscription and no
+API key).
 
 **Goal.** `responses` ingress + `openai-chat` wire + the pipeline that joins
 them. Real Codex completes a multi-step coding task against DeepSeek through
@@ -211,10 +232,11 @@ Consequences:
   Lite and code mode; a `chatgpt/gpt-5.6-sol` name would silently downgrade
   Codex to the classic dialect (it works, the backend accepted renamed classic
   requests, but code mode is lost).
-- The freeform `apply_patch` lowering planned below is dormant in practice:
-  classic Codex never declares a custom tool. Keep the generic custom-tool
-  lowering (one string parameter named `input`) because other Responses
-  clients may, and drop the apply_patch-specific envelope repair.
+- The freeform `apply_patch` lowering planned below was dormant with 0.153.4:
+  classic Codex declared no custom tool. 0.155.1 does (`exec`, see the
+  milestone 3 acceptance note), so the generic custom-tool lowering (one
+  string parameter named `input`) is live; the apply_patch-specific envelope
+  repair stays dropped.
 - `features.code_mode_host = false` does **not** switch Codex to classic
   tools; it only disables the host and the model keeps calling `exec`. Do not
   recommend it.

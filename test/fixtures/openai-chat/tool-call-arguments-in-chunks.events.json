@@ -1,0 +1,48 @@
+[
+  {
+    "type": "reasoning_delta",
+    "text": "Run"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " ls."
+  },
+  {
+    "type": "tool_call_start",
+    "id": "tool_08BrMDn4lnxBFC8djxvuiRFE",
+    "name": "exec_command"
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_08BrMDn4lnxBFC8djxvuiRFE",
+    "argumentsDelta": "{"
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_08BrMDn4lnxBFC8djxvuiRFE",
+    "argumentsDelta": "\"cmd\":\"ls -la"
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_08BrMDn4lnxBFC8djxvuiRFE",
+    "argumentsDelta": "\""
+  },
+  {
+    "type": "tool_call_delta",
+    "id": "tool_08BrMDn4lnxBFC8djxvuiRFE",
+    "argumentsDelta": "}"
+  },
+  {
+    "type": "tool_call_end",
+    "id": "tool_08BrMDn4lnxBFC8djxvuiRFE"
+  },
+  {
+    "type": "done",
+    "stopReason": "tool_use",
+    "usage": {
+      "inputTokens": 196,
+      "outputTokens": 57,
+      "reasoningTokens": 3
+    }
+  }
+]

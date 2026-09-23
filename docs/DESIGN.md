@@ -112,7 +112,7 @@ Detailed plan with steps and exit criteria: [PLAN.md](PLAN.md).
 |---|---|---|
 | 1 | IR, config, route, attempt, SSE codec, server shell | done |
 | 2 | ChatGPT subscription: import from Codex's `auth.json`, refresh, same-protocol passthrough | the credential seam and the passthrough rules |
-| 3 | `responses` ingress + `openai-chat` wire; Codex runs a Chat Completions model end to end | the IR (built; conformance and boundary tests green; live acceptance run pending) |
+| 3 | `responses` ingress + `openai-chat` wire; Codex runs a Chat Completions model end to end | the IR (built; Codex 0.155.1 ran shell, apply_patch and tests against Kimi; golden fixtures recorded) |
 | 4 | Account pool: several accounts, quota headers, selection, affinity, cooldown, PKCE login | the pool fits inside one retry loop (built against fakes; first live login pending) |
 | 5 | `anthropic` wire | the `Opaque` design |
 | 6 | `messages` ingress | the IR under a second client |

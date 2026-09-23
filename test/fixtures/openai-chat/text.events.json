@@ -1,0 +1,147 @@
+[
+  {
+    "type": "reasoning_delta",
+    "text": "Need"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " final"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " concise"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "."
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " Mention"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " Kimi developed"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " by Moonshot AI"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " naturally as"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " instructed"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": ". One short sentence"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": ". Ensure no"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " extra. Could"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " say:"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " \""
+  },
+  {
+    "type": "reasoning_delta",
+    "text": "I’m Kimi"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": ", an AI assistant"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " developed by Moonshot"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " AI, here to"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " help with answers"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": ","
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " writing, coding,"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " and ideas"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": ".\" That's"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " one sentence,"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " shortish"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": ". Need final"
+  },
+  {
+    "type": "reasoning_delta",
+    "text": " only."
+  },
+  {
+    "type": "text_delta",
+    "text": "I’m Kimi"
+  },
+  {
+    "type": "text_delta",
+    "text": ", an AI assistant"
+  },
+  {
+    "type": "text_delta",
+    "text": " developed by Moonshot"
+  },
+  {
+    "type": "text_delta",
+    "text": " AI, here to"
+  },
+  {
+    "type": "text_delta",
+    "text": " help with answers,"
+  },
+  {
+    "type": "text_delta",
+    "text": " writing, coding,"
+  },
+  {
+    "type": "text_delta",
+    "text": " and ideas."
+  },
+  {
+    "type": "done",
+    "stopReason": "end_turn",
+    "usage": {
+      "inputTokens": 94,
+      "outputTokens": 108,
+      "reasoningTokens": 66
+    }
+  }
+]

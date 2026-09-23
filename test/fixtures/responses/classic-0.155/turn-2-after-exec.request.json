@@ -1,0 +1,328 @@
+{
+  "model": "kimi/k3",
+  "instructions": "You are a coding agent powered by the k3. If asked which model you are, identify as k3. Do not claim to be a different model or to have a different creator. You and the user share one workspace, and your job is to collaborate with them unti…[truncated 18869 chars]",
+  "input": [
+    {
+      "type": "message",
+      "id": "msg_00000000-0000-4000-8000-000000000008",
+      "role": "developer",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "## Memory\n\nYou have access to a memory folder with guidance from prior runs. It can save\ntime and help you stay consistent. Use it whenever it is likely to help.\n\nDecision boundary: should you use memory for a new user query?\n\n- Skip memory…[truncated 12926 chars]"
+        },
+        {
+          "type": "input_text",
+          "text": "<skills_instructions>\n## Skills\nA skill is a set of local instructions to follow that is stored in a `SKILL.md` file. Below is the list of skills that can be used. Each entry includes a name, description, and a short path that can be expand…[truncated 14282 chars]"
+        },
+        {
+          "type": "input_text",
+          "text": "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written. `sandbox_mode` is `workspace-write`: The sandbox permits reading files, and editing files in `cwd` and `writable_roots`. Editing files in other dir…[truncated 433 chars]"
+        }
+      ]
+    },
+    {
+      "type": "message",
+      "id": "msg_00000000-0000-4000-8000-000000000009",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "<recommended_plugins>\nHere is a list of plugins that are available but not installed.\n\n- Dropbox (app-69b31dc2110c8191b8b47dc98fe5a052@openai-curated-remote)\n- Box (box@openai-curated-remote)\n- Codex Security (codex-security@openai-curated-remote)\n- Figma (figma@openai-curated-remote)\n- Linear (linear@openai-curated-remote)\n- Notion (notion@openai-curated-remote)\n- Outlook Calendar (outlook-calendar@openai-curated-remote)\n- Outlook Email (outlook-email@openai-curated-remote)\n- SharePoint (sharepoint@openai-curated-remote)\n- Slack (slack@openai-curated-remote)\n- Teams (teams@openai-curated-remote)\n</recommended_plugins>"
+        },
+        {
+          "type": "input_text",
+          "text": "<environment_context>\n  <cwd>/workspace</cwd>\n  <shell>zsh</shell>\n  <current_date>2026-09-23</current_date>\n  <timezone>America/Los_Angeles</timezone>\n  <filesystem><workspace_roots><root>/workspace</root></workspace_roots><permission_profile type=\"managed\"><file_system type=\"restricted\"><entry access=\"read\"><special>:root</special></entry><entry access=\"write\"><path>/workspace</path></entry><entry access=\"write\"><special>:slash_tmp</special></entry><entry access=\"write\"><special>:tmpdir</special></entry><entry access=\"read\"><path>/workspace/.git</path></entry><entry access=\"read\"><path>/workspace/.agents</path></entry><entry access=\"read\"><path>/workspace/.codex</path></entry></file_system></permission_profile></filesystem>\n</environment_context>"
+        }
+      ]
+    },
+    {
+      "type": "message",
+      "id": "msg_00000000-0000-4000-8000-000000000010",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Run `npm test` and tell me how many tests passed. Do not change any files."
+        }
+      ]
+    },
+    {
+      "type": "reasoning",
+      "id": "rs_77b8b491e20b1b7b61a2679f",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "Let me run npm test."
+        }
+      ],
+      "content": null,
+      "encrypted_content": null
+    },
+    {
+      "type": "custom_tool_call",
+      "id": "ctc_b652857247da123cad7d4edb",
+      "status": "completed",
+      "call_id": "tool_OEN0FmWC6GFj0h6x5fd3qrpn",
+      "name": "exec",
+      "input": "await tools.exec_command({cmd: \"npm test\", workdir: \"/workspace\", yield_time_ms: 30000})"
+    },
+    {
+      "type": "custom_tool_call_output",
+      "id": "ctco_00000000-0000-4000-8000-000000000014",
+      "call_id": "tool_OEN0FmWC6GFj0h6x5fd3qrpn",
+      "output": "Script completed\nWall time 0.2 seconds\nOutput:\n"
+    }
+  ],
+  "tools": [
+    {
+      "type": "custom",
+      "name": "exec",
+      "description": "Run JavaScript code to orchestrate/compose tool calls\n- Evaluates the provided JavaScript code in a fresh V8 isolate as an async module.\n- All nested tools are available on the global `tools` object, for example `await tools.exec_command(...)`. Tool names are exposed as normalized JavaScript identifiers, for example `await tools.mcp__ologs__get_profile(...)`.\n- Nested tool methods take either a string or an object as their input argument.\n- Nested tools return either an object or a string, based on the description.\n- Runs raw JavaScript -- no Node, no file system, no network access, no console.\n- Accepts raw JavaScript source text, not JSON, quoted strings, or markdown code fences.\n- You may optionally start the tool input with a first-line pragma like `// @exec: {\"yield_time_ms\": 10000, \"max_output_tokens\": 1000}`.\n- `yield_time_ms` asks `exec` to yield early if the script is still running. Defaults to 30000 ms.\n- `max_output_tokens` sets the token budget for direct `exec` results. Defaults to 10000 tokens.\n- When the JS code is fully evaluated, the isolate's lifetime ends and unawaited promises are silently discarded.\n\n- Global helpers:\n- `exit()`: Immediately ends the current script successfully (like an early return from the top level).\n- `text(value: string | number | boolean | undefined | null)`: Appends a text item. Non-string values are stringified with `JSON.stringify(...)` when possible.\n- `image(imageUrlOrItem: string | { image_url: string; detail?: \"auto\" | \"low\" | \"high\" | \"original\" | null } | ImageContent, detail?: \"auto\" | \"low\" | \"high\" | \"original\" | null)`: Appends an image item. `image_url` should be a base64-encoded `data:` URL. To forward an MCP tool image, pass an individual `ImageContent` block from `result.content`, for example `image(result.content[0])`. MCP image blocks may request detail with `_meta: { \"codex/imageDetail\": \"original\" }`. When provided, the second `detail` argument overrides any detail embedded in the first argument.\n- `audio(audioUrlOrItem: string | { audio_url: string } | AudioContent)`: Appends an audio item. `audio_url` should be a base64-encoded `data:` URL. To forward an MCP tool audio block, pass an individual `AudioContent` block from `result.content`, for example `audio(result.content[0])`.\n- `generatedImage(result: { image_url: string; output_hint?: string })`: Appends an image-generation result and its optional output hint. HTTP(S) URLs are not supported.\n- `store(key: string, value: any)`: stores a serializable value under a string key for later `exec` calls in the same session.\n- `load(key: string)`: returns the stored value for a string key, or `undefined` if it is missing.\n- `notify(value: string | number | boolean | undefined | null)`: immediately injects an extra `custom_tool_call_output` for the current `exec` call. Values are stringified like `text(...)`.\n- `setTimeout(callback: () => void, delayMs?: number)`: schedules a callback to run later and returns a timeout id. Pending timeouts do not keep `exec` alive by themselves; await an explicit promise if you need to wait for one.\n- `clearTimeout(timeoutId?: number)`: cancels a timeout created by `setTimeout`.\n- `ALL_TOOLS`: metadata for the enabled nested tools as `{ name, description }` entries.\n- `yield_control()`: yields the accumulated output to the model immediately while the script keeps running.\n\nSome deferred nested tools may be omitted from this description. They are still available on the global `tools` object and listed in `ALL_TOOLS`.\nTo find one, filter `ALL_TOOLS` by `name` and `description`.\n\nShared MCP Types:\n```ts\ntype Role = \"user\" | \"assistant\";\ntype MetaObject = Record<string, unknown>;\ntype Annotations = {\n  audience?: Role[];\n  priority?: number;\n  lastModified?: string;\n};\ntype Icon = {\n  src: string;\n  mimeType?: string;\n  sizes?: string[];\n  theme?: \"light\" | \"dark\";\n};\ntype TextResourceContents = {\n  uri: string;\n  mimeType?: string;\n  _meta?: MetaObject;\n  text: string;\n};\ntype BlobResourceContents = {\n  uri: string;\n  mimeType?: string;\n  _meta?: MetaObject;\n  blob: string;\n};\ntype TextContent = {\n  type: \"text\";\n  text: string;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype ImageContent = {\n  type: \"image\";\n  data: string;\n  mimeType: string;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype AudioContent = {\n  type: \"audio\";\n  data: string;\n  mimeType: string;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype ResourceLink = {\n  icons?: Icon[];\n  name: string;\n  title?: string;\n  uri: string;\n  description?: string;\n  mimeType?: string;\n  annotations?: Annotations;\n  size?: number;\n  _meta?: MetaObject;\n  type: \"resource_link\";\n};\ntype EmbeddedResource = {\n  type: \"resource\";\n  resource: TextResourceContents | BlobResourceContents;\n  annotations?: Annotations;\n  _meta?: MetaObject;\n};\ntype ContentBlock =\n  | TextContent\n  | ImageContent\n  | AudioContent\n  | ResourceLink\n  | EmbeddedResource;\ntype CallToolResult<TStructured = { [key: string]: unknown }> = {\n  _meta?: MetaObject;\n  content: ContentBlock[];\n  isError?: boolean;\n  structuredContent?: TStructured;\n  [key: string]: unknown;\n};\n```\n\n### `apply_patch`\nThe `apply_patch` tool can be used to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.\n\nexec tool declaration:\n```ts\ndeclare const tools: { apply_patch(input: string): Promise<unknown>; };\n```\n\n### `create_goal`\nCreate a goal only when explicitly requested by the user or system/developer instructions; do not infer goals from ordinary tasks.\nSet token_budget only when an explicit token budget is requested. Fails if an unfinished goal exists; use update_goal only for status.\n\nexec tool declaration:\n```ts\ndeclare const tools: { create_goal(args: {\n  // Required. The concrete objective to start pursuing. This starts a new active goal when no goal exists or replaces the current goal when it is complete.\n  objective: string;\n  // Positive token budget for the new goal. Omit unless explicitly requested.\n  token_budget?: number;\n}): Promise<unknown>; };\n```\n\n### `exec_command`\nRuns a command in a PTY, returning output or a session ID for ongoing interaction.\n\nexec tool declaration:\n```ts\ndeclare const tools: { exec_command(args: {\n  // Shell command to execute.\n  cmd: string;\n  // User-facing approval question for `require_escalated`; omit otherwise.\n  justification?: string;\n  // True runs the shell with -l/-i semantics; false disables them. Defaults to true.\n  login?: boolean;\n  // Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.\n  max_output_tokens?: number;\n  // Reusable approval prefix for `cmd`, only with `sandbox_permissions: \"require_escalated\"`; for example [\"git\", \"pull\"].\n  prefix_rule?: Array<string>;\n  // Per-command sandbox override. Defaults to `use_default`; use `require_escalated` for unsandboxed execution.\n  sandbox_permissions?: \"use_default\" | \"require_escalated\";\n  // Shell binary to launch. Defaults to the user's default shell.\n  shell?: string;\n  // True allocates a PTY for the command; false or omitted uses plain pipes.\n  tty?: boolean;\n  // Working directory for the command. Defaults to the turn cwd.\n  workdir?: string;\n  // Wait before yielding output. Defaults to 10000 ms; effective range is 250-30000 ms.\n  yield_time_ms?: number;\n}): Promise<{\n  // Chunk identifier included when the response reports one.\n  chunk_id?: string;\n  // Process exit code when the command finished during this call.\n  exit_code?: number;\n  // Approximate token count before output truncation.\n  original_token_count?: number;\n  // Command output text, possibly truncated.\n  output: string;\n  // Session identifier to pass to write_stdin when the process is still running.\n  session_id?: number;\n  // Elapsed wall time spent waiting for output in seconds.\n  wall_time_seconds: number;\n}>; };\n```\n\n### `get_goal`\nGet the current goal for this thread, including status, budgets, token and elapsed-time usage, and remaining token budget.\n\nexec tool declaration:\n```ts\ndeclare const tools: { get_goal(args: {}): Promise<unknown>; };\n```\n\n### `list_mcp_resource_templates`\nLists resource templates provided by MCP servers. Parameterized resource templates allow servers to share data that takes parameters and provides context to language models, such as files, database schemas, or application-specific information. Prefer resource templates over web search when possible.\n\nexec tool declaration:\n```ts\ndeclare const tools: { list_mcp_resource_templates(args: {\n  // Opaque cursor from a previous list_mcp_resource_templates call; omit for the first page.\n  cursor?: string;\n  // MCP server name. Omit to list resource templates from every configured server.\n  server?: string;\n}): Promise<unknown>; };\n```\n\n### `list_mcp_resources`\nLists resources provided by MCP servers. Resources allow servers to share data that provides context to language models, such as files, database schemas, or application-specific information. Prefer resources over web search when possible.\n\nexec tool declaration:\n```ts\ndeclare const tools: { list_mcp_resources(args: {\n  // Opaque cursor from a previous list_mcp_resources call; omit for the first page.\n  cursor?: string;\n  // MCP server name. Omit to list resources from every configured server.\n  server?: string;\n}): Promise<unknown>; };\n```\n\n### `read_mcp_resource`\nRead a specific resource from an MCP server given the server name and resource URI.\n\nexec tool declaration:\n```ts\ndeclare const tools: { read_mcp_resource(args: {\n  // MCP server name exactly as configured. Must match the 'server' field returned by list_mcp_resources.\n  server: string;\n  // Resource URI to read. Must be one of the URIs returned by list_mcp_resources.\n  uri: string;\n}): Promise<unknown>; };\n```\n\n### `request_plugin_install`\n# Suggest a recommended plugin installation\n\nUse this tool only when all of the following are true:\n- The user explicitly asks to use a specific plugin that is not already available in the current context or active `tools` list.\n- Tool search has already been exhausted and did not find or make the requested tool callable.\n- The plugin is listed in `<recommended_plugins>`.\n\nDo not use it for adjacent capabilities, broad recommendations, or plugins that merely seem useful. Briefly explain why the plugin can help with the current request in `suggest_reason`.\n\nIMPORTANT: DO NOT call this tool in parallel with other tools.\n\nexec tool declaration:\n```ts\ndeclare const tools: { request_plugin_install(args: {\n  // The parenthesized plugin ID from the `<recommended_plugins>` list.\n  plugin_id: string;\n  // Concise one-line user-facing reason why this plugin can help with the current request.\n  suggest_reason: string;\n}): Promise<unknown>; };\n```\n\n### `update_goal`\nUpdate the existing goal.\nSet status to `paused` only at the user's explicit request to pause this goal, never on your own initiative. Ask if unclear; a later resume revokes that request. Report the returned status and stop goal work. Budget limits take precedence over pausing.\nSet status to `complete` only when the objective has actually been achieved and no required work remains.\nSet status to `blocked` only when the same blocking condition has repeated for at least three consecutive goal turns, counting the original/user-triggered turn and any automatic continuations, and the agent cannot make meaningful progress without user input or an external-state change.\nIf the user resumes a goal that was previously marked `blocked`, treat the resumed run as a fresh blocked audit. If the same blocking condition then repeats for at least three consecutive resumed goal turns, set status to `blocked` again.\nOnce the blocked threshold is satisfied, do not keep reporting that you are still blocked while leaving the goal active; set status to `blocked`.\nDo not use `blocked` merely because the work is hard, slow, uncertain, incomplete, or would benefit from clarification.\nDo not mark a goal complete merely because its budget is nearly exhausted or because you are stopping work.\nYou cannot use this tool to resume, budget-limit, or usage-limit a goal; those status changes are controlled by the user or system.\nWhen marking a budgeted goal achieved with status `complete`, report the final token usage from the tool result to the user.\n\nexec tool declaration:\n```ts\ndeclare const tools: { update_goal(args: {\n  // Required. `paused` requires an explicit user request. Set to `complete` only when the objective is achieved and no required work remains. Set to `blocked` only after the same blocking condition has recurred for at least three consecutive goal turns and the agent is at an impasse. After a previously blocked goal is resumed, the resumed run starts a fresh blocked audit.\n  status: \"complete\" | \"blocked\" | \"paused\";\n}): Promise<unknown>; };\n```\n\n### `view_image`\nView a local image file from the filesystem when visual inspection is needed. Use this for images already available on disk.\n\nexec tool declaration:\n```ts\ndeclare const tools: { view_image(args: {\n  // Image detail level. Defaults to `high`; use `original` to preserve exact resolution.\n  detail?: \"high\" | \"original\";\n  // Local filesystem path to an image file.\n  path: string;\n}): Promise<{\n  // Image detail hint returned by view_image. Returns `high` for default resized behavior or `original` when original resolution is preserved.\n  detail: \"high\" | \"original\";\n  // Data URL for the loaded image.\n  image_url: string;\n}>; };\n```\n\n### `write_stdin`\nWrites characters to an existing unified exec session and returns recent output.\n\nexec tool declaration:\n```ts\ndeclare const tools: { write_stdin(args: {\n  // Bytes to write to stdin. Defaults to empty, which polls without writing.\n  chars?: string;\n  // Output token budget. Defaults to 10000 tokens; larger requests may be capped by policy.\n  max_output_tokens?: number;\n  // Identifier of the running unified exec session.\n  session_id: number;\n  // Wait before yielding output. Non-empty writes default to 250 ms and cap at 30000 ms; empty polls wait 5000-300000 ms by default.\n  yield_time_ms?: number;\n}): Promise<{\n  // Chunk identifier included when the response reports one.\n  chunk_id?: string;\n  // Process exit code when the command finished during this call.\n  exit_code?: number;\n  // Approximate token count before output truncation.\n  original_token_count?: number;\n  // Command output text, possibly truncated.\n  output: string;\n  // Session identifier to pass to write_stdin when the process is still running.\n  session_id?: number;\n  // Elapsed wall time spent waiting for output in seconds.\n  wall_time_seconds: number;\n}>; };\n```\n\n## clock\nTools for reading and waiting on time.\n\n### `clock__curr_time`\nReturn the current time in UTC.\n\nexec tool declaration:\n```ts\ndeclare const tools: { clock__curr_time(args: {}): Promise<{\n  // Current UTC time formatted as YYYY-MM-DD HH:MM:SS UTC.\n  current_time: string;\n}>; };\n```",
+      "format": {
+        "type": "grammar",
+        "syntax": "lark",
+        "definition": "\nstart: pragma_source | plain_source\npragma_source: PRAGMA_LINE NEWLINE SOURCE\nplain_source: SOURCE\n\nPRAGMA_LINE: /[ \\t]*\\/\\/ @exec:[^\\r\\n]*/\nNEWLINE: /\\r?\\n/\nSOURCE: /[\\s\\S]+/\n"
+      }
+    },
+    {
+      "type": "function",
+      "name": "wait",
+      "description": "Waits on a yielded `exec` cell and returns new output or completion.\n- Use `wait` only after `exec` returns `Script running with cell ID ...`.\n- `cell_id` identifies the running `exec` cell to resume.\n- `yield_time_ms` controls how long to wait for more output before yielding again. Defaults to 10000 ms.\n- `max_tokens` limits how much new output this wait call returns. Defaults to 10000 tokens.\n- `terminate: true` stops the running cell; false or omitted waits for output.\n- `wait` returns only the new output since the last yield, or the final completion or termination result for that cell.\n- If the cell is still running, `wait` may yield again with the same `cell_id`.\n- If the cell has already finished, `wait` returns the completed result and closes the cell.",
+      "strict": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cell_id": {
+            "type": "string",
+            "description": "Identifier of the running exec cell."
+          },
+          "max_tokens": {
+            "type": "number",
+            "description": "Output token budget for this wait call. Defaults to 10000 tokens."
+          },
+          "terminate": {
+            "type": "boolean",
+            "description": "True stops the running exec cell; false or omitted waits for output."
+          },
+          "yield_time_ms": {
+            "type": "number",
+            "description": "Wait before yielding more output. Defaults to 10000 ms."
+          }
+        },
+        "required": [
+          "cell_id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "type": "function",
+      "name": "request_user_input",
+      "description": "Request user input for one to three short questions and wait for the response. This tool is only available in Plan mode.",
+      "strict": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "questions": {
+            "type": "array",
+            "description": "Questions to show the user. Prefer 1 and do not exceed 3",
+            "items": {
+              "type": "object",
+              "properties": {
+                "header": {
+                  "type": "string",
+                  "description": "Short header label shown in the UI (12 or fewer chars)."
+                },
+                "id": {
+                  "type": "string",
+                  "description": "Stable identifier for mapping answers (snake_case)."
+                },
+                "options": {
+                  "type": "array",
+                  "description": "Provide 2-3 mutually exclusive choices. Put the recommended option first and suffix its label with \"(Recommended)\". Do not include an \"Other\" option in this list; the client will add a free-form \"Other\" option automatically.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "description": {
+                        "type": "string",
+                        "description": "One short sentence explaining impact/tradeoff if selected."
+                      },
+                      "label": {
+                        "type": "string",
+                        "description": "User-facing label (1-5 words)."
+                      }
+                    },
+                    "required": [
+                      "label",
+                      "description"
+                    ],
+                    "additionalProperties": false
+                  }
+                },
+                "question": {
+                  "type": "string",
+                  "description": "Single-sentence prompt shown to the user."
+                }
+              },
+              "required": [
+                "id",
+                "header",
+                "question",
+                "options"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "questions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "type": "function",
+      "name": "request_user_input_async",
+      "description": "Ask the user one or more questions during ongoing work. Use this tool only to request missing information, preferences, constraints, clarification, or approval. The tool returns immediately without ending the turn or waiting for a reply; any reply arrives asynchronously as a new user message. Keep questions concise, self-contained, and easy to understand, using a level of detail appropriate to the user and task. The UI always allows a free-text answer, including when suggested options are provided. A preselected option is not submitted automatically.",
+      "strict": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "questions": {
+            "type": "array",
+            "description": "One or more self-contained questions to present together, in display order.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "options": {
+                  "type": "array",
+                  "description": "Suggested answers, in display order. Put the recommended answer first; the first option is preselected by default. The user can select one option or enter a free-text answer. Do not include an Other option or a free-text placeholder; the UI provides free-text input automatically. Omit options for a free-text-only question.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1
+                },
+                "title": {
+                  "type": "string",
+                  "description": "The complete question shown to the user, including any context needed to answer it."
+                }
+              },
+              "required": [
+                "title"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "questions"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "type": "namespace",
+      "name": "clock",
+      "description": "Tools for reading and waiting on time.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "sleep",
+          "description": "Pause execution for a specified duration. The sleep ends early when new input arrives for the active turn. Returns the elapsed wall-clock time.",
+          "strict": false,
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "duration_ms": {
+                "type": "number",
+                "description": "How long to sleep in milliseconds. Must be between 1 and 43200000."
+              }
+            },
+            "required": [
+              "duration_ms"
+            ],
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "type": "namespace",
+      "name": "mcp__cua_repl",
+      "description": "UI automation through cua_repl using the initialized cua API.",
+      "tools": [
+        {
+          "type": "function",
+          "name": "js",
+          "description": "Control native apps or browsers on the user’s computer by reading or operating UI. Prefer purpose-built skills, connectors, APIs, or CLIs when available.\n\nOn your first call, or after a reset, execute exactly one of the API calls shown below, optionally assigning its result to a variable. Do not add other API calls, waits, or snapshots to that invocation.\nThe tool result will include documentation and, when creating or selecting a tab or selecting an app, its initial UI state. Selecting a browser does not open a tab. Read that result before continuing.\nUse only APIs described in the tool instructions or returned documentation.\n\nWhen you need an inventory of available apps, browsers, and tabs, get a snapshot of all enabled surfaces. Otherwise, use the relevant entry point below:\n\n```javascript\nawait cua.getState();\n```\n\nUse the first matching browser control option from the user's request:\n\nFor a tab @-mention (`mention=tab-v1`):\nPass the complete `plugin://...` URL to get the referenced tab.\n\n```javascript\nlet tab = await cua.getTab({ mention: tabMentionUrl });\n```\n\nFor an existing tab identified by URL in browser context (including the current IAB tab):\n\n```javascript\nlet tab = await cua.getTab({ url }, { browser: browserId });\n```\n\nKnown tab ID (`tabId` or `providerTabId`) and browser (name or browser @-mention):\n\n```javascript\nlet tab = await cua.getTab(tabId, { browser: browserId });\n```\n\nTo open a URL in the in-app browser (`@Browser`):\n\n```javascript\nlet tab = await cua.createBrowserTab(\"iab\", url, { visible: boolean });\n```\n\nTo open a URL in another named browser: pass its name directly; do not call `getBrowser` first.\n\n```javascript\nlet tab = await cua.createBrowserTab(browserName, url, browserOptions);\n```\n\nKnown URL, only when the user has not specified a browser by name or @-mention:\n\n```javascript\nlet browser = await cua.getBrowser({ url });\n```\n\nBrowser IDs and options:\n\n- `\"iab\"` (in-app browser): in `createBrowserTab`, use `visible: true` to show the browser; `false` to keep it hidden.\n- `\"chrome\"` (@Chrome), `\"edge\"` (@Edge): pass a short, emoji-prefixed `sessionName` (e.g. `\"🔎 Task\"`) to `createBrowserTab` when starting a task.\n\nIf the user specifies an app to use, get the app by name, bundle ID, or path:\n\n```javascript\nlet app = await cua.getApp(\"Example App\");\n```\n\nTo add other content to the tool result, use `nodeRepl.write(value)` for text or other values and `await nodeRepl.emitImage(image)` for images. The APIs listed above already display their documentation or UI state; do not wrap their results in `write` or `emitImage`.\n\nIf your context begins with a summary of an existing computer use task, call `await cua.rewriteDocumentation()` before continuing the computer use task to ensure you have a complete view of the necessary documentation. This tool is part of plugin `unified-computer-use`.",
+          "strict": false,
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "description": "JavaScript to execute using the initialized cua_repl runtime."
+              },
+              "timeout_ms": {
+                "type": "integer",
+                "description": "Optional execution timeout in milliseconds. Defaults to 30000 (30 seconds) when omitted."
+              },
+              "title": {
+                "type": "string",
+                "description": "Short user-facing description of what the code does."
+              }
+            },
+            "required": [
+              "code"
+            ],
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "function",
+          "name": "js_reset",
+          "description": "Reset the persistent cua_repl JavaScript session. All JavaScript bindings are discarded. The next cua_repl.js call initializes a fresh runtime for the enabled surfaces. This does not close browser tabs or native apps, or erase their state. This tool is part of plugin `unified-computer-use`.",
+          "strict": false,
+          "parameters": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": false
+          }
+        }
+      ]
+    },
+    {
+      "type": "web_search",
+      "external_web_access": false,
+      "search_content_types": [
+        "text",
+        "image"
+      ]
+    }
+  ],
+  "tool_choice": "auto",
+  "parallel_tool_calls": true,
+  "reasoning": {
+    "effort": "low"
+  },
+  "store": false,
+  "stream": true,
+  "include": [
+    "reasoning.encrypted_content"
+  ],
+  "prompt_cache_key": "00000000-0000-4000-8000-000000000011",
+  "text": {
+    "verbosity": "low"
+  },
+  "client_metadata": {
+    "x-codex-window-id": "00000000-0000-4000-8000-000000000011:0",
+    "thread_id": "00000000-0000-4000-8000-000000000011",
+    "root_turn_id": "00000000-0000-4000-8000-000000000012",
+    "x-codex-turn-metadata": "{\"installation_id\":\"00000000-0000-4000-8000-000000000006\",\"session_id\":\"00000000-0000-4000-8000-000000000011\",\"thread_id\":\"00000000-0000-4000-8000-000000000011\",\"agent_name\":\"/root\",\"turn_id\":\"00000000-0000-4000-8000-000000000012\",\"window_id\":\"00000000-0000-4000-8000-000000000011:0\",\"window_number\":0,\"context_window_id\":\"00000000-0000-4000-8000-000000000013\",\"request_kind\":\"turn\",\"root_turn_id\":\"00000000-0000-4000-8000-000000000012\",\"thread_source\":\"user\",\"sandbox\":\"seatbelt\",\"sandbox_mode\":\"workspace-write\",\"auto_review_enabled\":false,\"node_repl_auto_review_required\":false,\"node_repl_disabled\":false,\"workspaces\":{\"/workspace\":{\"latest_git_commit_hash\":\"91e9722422161bf445048af8cd36854ec520a69a\",\"has_changes\":true}},\"turn_started_at_unix_ms\":1790151069057}",
+    "session_id": "00000000-0000-4000-8000-000000000011",
+    "turn_id": "00000000-0000-4000-8000-000000000012",
+    "x-codex-installation-id": "00000000-0000-4000-8000-000000000006"
+  }
+}

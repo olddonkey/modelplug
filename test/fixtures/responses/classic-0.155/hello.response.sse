@@ -1,0 +1,81 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_51bfd59bb3d59bdce4063deb","object":"response","created_at":1790151065,"status":"in_progress","model":"kimi/k3","output":[],"error":null,"incomplete_details":null,"instructions":null,"metadata":{},"parallel_tool_calls":true,"store":false,"tool_choice":"auto","tools":[],"text":{"format":{"type":"text"}},"usage":null,"reasoning":{"effort":"low"}}}
+
+event: response.in_progress
+data: {"type":"response.in_progress","sequence_number":1,"response":{"id":"resp_51bfd59bb3d59bdce4063deb","object":"response","created_at":1790151065,"status":"in_progress","model":"kimi/k3","output":[],"error":null,"incomplete_details":null,"instructions":null,"metadata":{},"parallel_tool_calls":true,"store":false,"tool_choice":"auto","tools":[],"text":{"format":{"type":"text"}},"usage":null,"reasoning":{"effort":"low"}}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":2,"output_index":0,"item":{"id":"rs_c504e877d9228de6322524da","type":"reasoning","summary":[]}}
+
+event: response.reasoning_summary_part.added
+data: {"type":"response.reasoning_summary_part.added","sequence_number":3,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":""}}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":4,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":"The"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":5,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":" user"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":6,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":" asked"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":7,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":" to"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":8,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":" reply"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":9,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":" with"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":10,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":" exactly"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":11,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":" one"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":12,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":" word"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":13,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":":"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":14,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":" pong"}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","sequence_number":15,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"delta":"."}
+
+event: response.reasoning_summary_text.done
+data: {"type":"response.reasoning_summary_text.done","sequence_number":16,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"text":"The user asked to reply with exactly one word: pong."}
+
+event: response.reasoning_summary_part.done
+data: {"type":"response.reasoning_summary_part.done","sequence_number":17,"item_id":"rs_c504e877d9228de6322524da","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":"The user asked to reply with exactly one word: pong."}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":18,"output_index":0,"item":{"id":"rs_c504e877d9228de6322524da","type":"reasoning","summary":[{"type":"summary_text","text":"The user asked to reply with exactly one word: pong."}]}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","sequence_number":19,"output_index":1,"item":{"id":"msg_3954e98f516acafcc51d5529","type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","sequence_number":20,"item_id":"msg_3954e98f516acafcc51d5529","output_index":1,"content_index":0,"part":{"type":"output_text","text":"","annotations":[],"logprobs":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":21,"item_id":"msg_3954e98f516acafcc51d5529","output_index":1,"content_index":0,"delta":"p","logprobs":[]}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","sequence_number":22,"item_id":"msg_3954e98f516acafcc51d5529","output_index":1,"content_index":0,"delta":"ong","logprobs":[]}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","sequence_number":23,"item_id":"msg_3954e98f516acafcc51d5529","output_index":1,"content_index":0,"text":"pong","logprobs":[]}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","sequence_number":24,"item_id":"msg_3954e98f516acafcc51d5529","output_index":1,"content_index":0,"part":{"type":"output_text","text":"pong","annotations":[],"logprobs":[]}}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","sequence_number":25,"output_index":1,"item":{"id":"msg_3954e98f516acafcc51d5529","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"pong","annotations":[],"logprobs":[]}]}}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":26,"response":{"id":"resp_51bfd59bb3d59bdce4063deb","object":"response","created_at":1790151065,"status":"completed","model":"kimi/k3","output":[{"id":"rs_c504e877d9228de6322524da","type":"reasoning","summary":[{"type":"summary_text","text":"The user asked to reply with exactly one word: pong."}]},{"id":"msg_3954e98f516acafcc51d5529","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"pong","annotations":[],"logprobs":[]}]}],"error":null,"incomplete_details":null,"instructions":null,"metadata":{},"parallel_tool_calls":true,"store":false,"tool_choice":"auto","tools":[],"text":{"format":{"type":"text"}},"usage":{"input_tokens":16993,"input_tokens_details":{"cached_tokens":3584},"output_tokens":30,"output_tokens_details":{"reasoning_tokens":13},"total_tokens":17023},"reasoning":{"effort":"low"}}}
+
