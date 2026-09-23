@@ -215,7 +215,7 @@ test("a non-retryable upstream error becomes a Responses-shaped JSON error with 
   }
 });
 
-test("local refusals: missing model, previous_response_id, wire not served yet", async () => {
+test("local refusals: missing model, previous_response_id", async () => {
   const h = await harness([okSse()]);
   try {
     const missing = await h.post({ input: "hi" });
@@ -224,9 +224,6 @@ test("local refusals: missing model, previous_response_id, wire not served yet",
     const prev = await h.post({ model: "gpt-5.6-sol", previous_response_id: "resp_0" });
     assert.equal(prev.status, 400);
     assert.match(((await prev.json()) as { error: { message: string } }).error.message, /previous_response_id is not supported/);
-    const routed = await h.post({ model: "missing" });
-    assert.equal(routed.status, 400);
-    assert.match(((await routed.json()) as { error: { message: string } }).error.message, /wire "gemini".*cannot serve yet/);
     assert.equal(h.upstream.calls, 0);
   } finally {
     await h.stop();
