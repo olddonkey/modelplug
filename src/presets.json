@@ -34,6 +34,19 @@
     },
     "note": "Codex's own backend via a ChatGPT subscription. Use bare OpenAI model names with defaultProvider so Codex keeps its native dialect."
   },
+  "kimi": {
+    "wire": "openai-chat",
+    "baseUrl": "https://api.kimi.com/coding/v1",
+    "credential": "kimi",
+    "capabilities": {
+      "reasoning": "reasoning_content",
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    },
+    "note": "Kimi Code subscription; log in with `modelplug login kimi`. API-key users of the Moonshot platform use the `moonshot` preset."
+  },
   "anthropic": {
     "wire": "anthropic",
     "baseUrl": "https://api.anthropic.com",

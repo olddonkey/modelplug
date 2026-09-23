@@ -14,6 +14,17 @@ test("preset supplies wire, baseUrl and capabilities; user overrides win", () =>
   assert.equal(ds.capabilities.images, true);
 });
 
+test("kimi preset resolves to the Kimi credential and Code API", () => {
+  const kimi = parseConfig({ providers: { kimi: { preset: "kimi" } } }, "test").providers.kimi!;
+  assert.equal(kimi.wire, "openai-chat");
+  assert.equal(kimi.baseUrl, "https://api.kimi.com/coding/v1");
+  assert.equal(kimi.credential, "kimi");
+  assert.equal(kimi.capabilities.reasoning, "reasoning_content");
+  assert.equal(kimi.capabilities.tools, true);
+  assert.equal(kimi.capabilities.images, true);
+  assert.equal(kimi.capabilities.temperature, true);
+});
+
 test("a wire alone has no base URL; the error names the presets that set one", () => {
   assert.throws(() => parseConfig({ providers: { a: { wire: "anthropic", apiKey: "k" } } }, "test"), /baseUrl.*required.*preset.*anthropic/);
   assert.throws(() => parseConfig({ providers: { l: { wire: "openai-chat" } } }, "test"), /baseUrl.*required/);
