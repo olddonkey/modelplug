@@ -592,6 +592,10 @@ API keys, and API-key providers that reject Codex's private dialect fields.
 
 Exit: conformance green on three wires; the pipeline test proves both paths; live acceptance against an OpenAI or xAI key when one is available.
 
+**Status (2026-09-23):** encode/decode, the `passthrough` switch, the
+conformance scenario and the API-key pipeline test are in; 109 tests green.
+Live acceptance against an OpenAI or xAI key is pending.
+
 ### 7c. `gemini` wire
 
 Gemini API (`generativelanguage.googleapis.com`), API key in the

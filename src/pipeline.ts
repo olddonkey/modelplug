@@ -2,7 +2,7 @@
  * Joins ingress, route, credentials, attempts and wires into request handlers.
  *
  * Two paths share one attempt loop: the same-protocol passthrough for Responses
- * requests to an `openai-responses` provider (bytes relayed, headers injected,
+ * requests to an `openai-responses` provider with passthrough enabled (bytes relayed, headers injected,
  * no payload rewrites) and the IR path for every other wire (parse, encode,
  * decode, respond). Retries happen only before the first byte reaches the client.
  */
@@ -179,7 +179,7 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
 
       let upstreamUrl: string;
       let upstreamInit: RequestInit;
-      const passthrough = provider.wire === "openai-responses";
+      const passthrough = provider.wire === "openai-responses" && provider.passthrough;
       if (passthrough) {
         // Same-protocol passthrough: inject headers, relay bytes, read status and headers. No payload rewrites.
         const headers: Record<string, string> = { ...clientHeaders, "content-type": "application/json", ...providerTarget.headers };

@@ -18,6 +18,7 @@
   },
   "chatgpt": {
     "wire": "openai-responses",
+    "passthrough": true,
     "baseUrl": "https://chatgpt.com/backend-api/codex",
     "credential": "chatgpt",
     "capabilities": {
@@ -36,6 +37,7 @@
   },
   "anthropic": {
     "wire": "anthropic",
+    "passthrough": true,
     "baseUrl": "https://api.anthropic.com",
     "capabilities": {
       "reasoning": "budget",

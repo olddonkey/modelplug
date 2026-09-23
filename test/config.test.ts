@@ -60,3 +60,19 @@ test("environment-only single provider mode", () => {
   assert.equal(configFromEnv({}), undefined);
   assert.throws(() => configFromEnv({ MODELPLUG_WIRE: "carrier-pigeon" }), /MODELPLUG_WIRE/);
 });
+
+test("passthrough defaults by credential kind, presets and explicit overrides", () => {
+  const config = parseConfig({ providers: {
+    key: { wire: "openai-responses", baseUrl: "https://example.test/v1", apiKey: "k" },
+    openai: { preset: "openai", apiKey: "k" },
+    chatgpt: { preset: "chatgpt" },
+    anth: { preset: "anthropic", apiKey: "k" },
+    forced: { preset: "openai", apiKey: "k", passthrough: true },
+    disabled: { preset: "chatgpt", passthrough: false },
+    overridepreset: { preset: "anthropic", apiKey: "k", passthrough: false },
+    credentialoverride: { preset: "openai", credential: "chatgpt" },
+  } }, "test");
+  for (const name of ["key", "openai", "disabled", "overridepreset"]) assert.equal(config.providers[name]?.passthrough, false, name);
+  for (const name of ["chatgpt", "anth", "forced", "credentialoverride"]) assert.equal(config.providers[name]?.passthrough, true, name);
+  assert.throws(() => parseConfig({ providers: { p: { preset: "openai", passthrough: "yes" } } }, "test"), ConfigError);
+});

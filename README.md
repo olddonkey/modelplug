@@ -90,6 +90,13 @@ tried in order until one target answers. A bare OpenAI model name with
 `defaultProvider: "chatgpt"` keeps Codex's native dialect; the reasons are in
 [docs/CLIENTS.md](docs/CLIENTS.md).
 
+Set `passthrough` on a provider to choose whether matching client and upstream
+protocols are relayed unchanged. The default is `true` for ChatGPT credentials
+and `false` for API keys. The `chatgpt` and `anthropic` presets set it to
+`true`; a provider setting overrides its preset. Set `"passthrough": false`
+on an OpenAI Responses provider to translate through the IR, which removes
+Codex-only request fields and flattens namespace tools.
+
 Several ChatGPT accounts form a pool: run `modelplug login chatgpt` once per
 account. A new conversation picks an account by the provider's `strategy`
 (`lowest-usage` from the quota headers, the default; `round-robin`;
