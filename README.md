@@ -57,6 +57,7 @@ npm install -g modelplug
 # ChatGPT subscription: reuse the login Codex already has, then run
 modelplug login chatgpt --import
 modelplug login chatgpt                     # or log in through the browser; repeat to pool several accounts
+modelplug login grok                        # Grok subscription login through the browser
 MODELPLUG_PRESET=chatgpt modelplug
 modelplug print codex --model gpt-5.5       # paste into ~/.codex/config.toml
 

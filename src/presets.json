@@ -94,6 +94,21 @@
       "stream": "sse"
     }
   },
+  "grok": {
+    "wire": "openai-responses",
+    "baseUrl": "https://api.x.ai/v1",
+    "credential": "grok",
+    "passthrough": false,
+    "capabilities": {
+      "reasoning": "effort",
+      "reasoningLevels": ["low", "high"],
+      "tools": true,
+      "images": true,
+      "temperature": true,
+      "stream": "sse"
+    },
+    "note": "Grok subscription; `modelplug login grok`. API-key xAI users use the `xai` preset."
+  },
   "deepseek": {
     "wire": "openai-chat",
     "baseUrl": "https://api.deepseek.com/v1",

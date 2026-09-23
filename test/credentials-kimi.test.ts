@@ -458,7 +458,7 @@ test("CLI account list shows Kimi alone and an accurate empty hint; logout chatg
   console.log = (...args: unknown[]) => { lines.push(args.map(String).join(" ")); };
   try {
     await main(["account", "list"]);
-    assert.deepEqual(lines, ["no accounts. Run: modelplug login chatgpt --import, modelplug login chatgpt, or modelplug login kimi"]);
+    assert.deepEqual(lines, ["no accounts. Run: modelplug login chatgpt --import, modelplug login chatgpt, modelplug login kimi, or modelplug login grok"]);
     saveCredentialStore(storePath, { schemaVersion: 1, chatgpt: { accounts: [] }, kimi: { accounts: [account()], deviceId: "b".repeat(32) } });
     lines.length = 0;
     await main(["account", "list"]);

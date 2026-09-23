@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { ConfigError, loadConfig, loadPresets, type ResolvedConfig } from "./config.ts";
 import { defaultCodexAuthPath, importCodexAuth, tokenExpiresAt, upsertAccount } from "./credentials/chatgpt.ts";
 import { loginChatgpt } from "./credentials/chatgpt-login.ts";
+import { loginGrok } from "./credentials/grok.ts";
 import { CredentialError } from "./credentials/index.ts";
 import { loginKimi } from "./credentials/kimi.ts";
 import { CredentialStoreError, defaultCredentialStorePath, loadCredentialStore, saveCredentialStore } from "./credentials/store.ts";
@@ -34,6 +35,8 @@ Usage:
   modelplug login kimi                               visit the printed URL and enter the code
   modelplug logout chatgpt                           forget every ChatGPT account
   modelplug logout kimi                              forget the Kimi account
+  modelplug login grok                                log in to a Grok subscription through the browser
+  modelplug logout grok                               forget the Grok account
   modelplug account list|use <id>|auto|remove <id>   list, pin one, let the strategy pick, or forget
 
 Config is read from --config, $MODELPLUG_CONFIG, ./modelplug.json, or
@@ -196,7 +199,7 @@ async function check(config: ResolvedConfig, offline: boolean): Promise<void> {
       caps.stream,
     ].join(" ");
     console.log(`  ${p.name.padEnd(14)} ${p.wire.padEnd(17)} ${p.baseUrl}`);
-    const cred = p.credential === "chatgpt" ? `chatgpt accounts=${chatgptAccountCount()}` : p.credential === "kimi" ? `kimi accounts=${kimiAccountCount()}` : `api-key key=${p.apiKey ? "set" : "none"}`;
+    const cred = p.credential === "chatgpt" ? `chatgpt accounts=${chatgptAccountCount()}` : p.credential === "kimi" ? `kimi accounts=${kimiAccountCount()}` : p.credential === "grok" ? `grok accounts=${grokAccountCount()}` : `api-key key=${p.apiKey ? "set" : "none"}`;
     console.log(`  ${"".padEnd(14)} ${cred}${p.preset ? ` preset=${p.preset}` : ""} ${capsText}`);
     const probe = probes.get(p.name);
     if (probe) {
@@ -268,6 +271,14 @@ function chatgptAccountCount(): string {
   }
 }
 
+function grokAccountCount(): string {
+  try {
+    return String(loadCredentialStore(defaultCredentialStorePath()).grok?.accounts.length ?? 0);
+  } catch (err) {
+    return `? (${err instanceof Error ? err.message : String(err)})`;
+  }
+}
+
 function kimiAccountCount(): string {
   try {
     return String(loadCredentialStore(defaultCredentialStorePath()).kimi?.accounts.length ?? 0);
@@ -281,6 +292,17 @@ protection from provider rate limits, enforcement, or account actions, and you a
 for complying with OpenAI's terms.`;
 
 async function login(provider: string | undefined, doImport: boolean, from: string | undefined): Promise<void> {
+  if (provider === "grok") {
+    if (doImport || from) throw new ConfigError("login grok does not support --import or --from");
+    const storePath = defaultCredentialStorePath();
+    const store = loadCredentialStore(storePath);
+    const account = await loginGrok({ log: console.log });
+    store.grok = { accounts: [account] };
+    saveCredentialStore(storePath, store);
+    console.log(`logged in: ${account.email ?? account.id} (grok)`);
+    console.log(`stored in ${storePath} (mode 0600); access token valid until ${new Date(account.expiresAt).toISOString()}, refreshed automatically`);
+    return;
+  }
   if (provider === "kimi") {
     if (doImport || from) throw new ConfigError("login kimi does not support --import or --from");
     const storePath = defaultCredentialStorePath();
@@ -294,7 +316,7 @@ async function login(provider: string | undefined, doImport: boolean, from: stri
     console.log(`\nNext: put this in your config and start the proxy\n  { "providers": { "kimi": { "preset": "kimi" } }, "defaultProvider": "kimi" }\nor simply:  MODELPLUG_PRESET=kimi modelplug\nthen:       modelplug print codex --model kimi/k3`);
     return;
   }
-  if (provider !== "chatgpt") throw new ConfigError("login supports: chatgpt | kimi");
+  if (provider !== "chatgpt") throw new ConfigError("login supports: chatgpt | kimi | grok");
   const storePath = defaultCredentialStorePath();
   const store = loadCredentialStore(storePath);
   let account;
@@ -331,9 +353,16 @@ function logout(provider: string | undefined): void {
     console.log(`removed ${count} Kimi account(s) from ${storePath}`);
     return;
   }
-  if (provider !== "chatgpt") throw new ConfigError("logout supports: chatgpt | kimi");
+  if (provider !== "chatgpt" && provider !== "grok") throw new ConfigError("logout supports: chatgpt | kimi | grok");
   const storePath = defaultCredentialStorePath();
   const store = loadCredentialStore(storePath);
+  if (provider === "grok") {
+    const count = store.grok?.accounts.length ?? 0;
+    delete store.grok;
+    saveCredentialStore(storePath, store);
+    console.log(`removed ${count} Grok account(s) from ${storePath}`);
+    return;
+  }
   const count = store.chatgpt.accounts.length;
   store.chatgpt.accounts = [];
   delete store.chatgpt.active;
@@ -347,8 +376,8 @@ function account(sub: string | undefined, id: string | undefined): void {
   switch (sub) {
     case undefined:
     case "list": {
-      if (store.chatgpt.accounts.length === 0 && (store.kimi?.accounts.length ?? 0) === 0) {
-        console.log("no accounts. Run: modelplug login chatgpt --import, modelplug login chatgpt, or modelplug login kimi");
+      if (store.chatgpt.accounts.length === 0 && (store.kimi?.accounts.length ?? 0) === 0 && (store.grok?.accounts.length ?? 0) === 0) {
+        console.log("no accounts. Run: modelplug login chatgpt --import, modelplug login chatgpt, modelplug login kimi, or modelplug login grok");
         return;
       }
       for (const a of store.chatgpt.accounts) {
@@ -359,6 +388,10 @@ function account(sub: string | undefined, id: string | undefined): void {
       for (const a of store.kimi?.accounts ?? []) {
         const marks = [a.needsLogin ? "NEEDS LOGIN" : ""].filter(Boolean).join(", ");
         console.log(`${a.id}  kimi  ${a.email ?? "-"}  -  ${a.source}  token ${a.expiresAt < Date.now() ? "expired" : `valid until ${new Date(a.expiresAt).toISOString()}`}${marks ? `  [${marks}]` : ""}`);
+      }
+      for (const a of store.grok?.accounts ?? []) {
+        const marks = a.needsLogin ? "NEEDS LOGIN" : "";
+        console.log(`${a.id}  grok  ${a.email ?? "-"}  -  ${a.source}  token ${a.expiresAt < Date.now() ? "expired" : `valid until ${new Date(a.expiresAt).toISOString()}`}${marks ? `  [${marks}]` : ""}`);
       }
       if (store.chatgpt.accounts.length > 0) {
         console.log(store.chatgpt.active ? "\nevery request goes to the pinned account while it is usable; `modelplug account use auto` lets the strategy pick" : "\nnew conversations pick an account by the provider's strategy (lowest-usage unless configured)");
@@ -375,12 +408,14 @@ function account(sub: string | undefined, id: string | undefined): void {
       }
       const inChatgpt = store.chatgpt.accounts.some(a => a.id === id);
       const inKimi = (store.kimi?.accounts ?? []).some(a => a.id === id);
-      if (!id || (!inChatgpt && !inKimi)) throw new ConfigError(`account use needs an id from \`modelplug account list\`, or "auto"`);
-      if (inChatgpt && inKimi) throw new ConfigError(`account id "${id}" exists in both credential kinds`);
+      const inGrok = (store.grok?.accounts ?? []).some(a => a.id === id);
+      if (!id || (!inChatgpt && !inKimi && !inGrok)) throw new ConfigError(`account use needs an id from \`modelplug account list\`, or "auto"`);
+      if ([inChatgpt, inKimi, inGrok].filter(Boolean).length > 1) throw new ConfigError(`account id "${id}" exists in both credential kinds`);
       if (inKimi) {
         console.log("Kimi has one account; nothing to pin");
         return;
       }
+      if (inGrok) throw new ConfigError("grok holds one account and has nothing to pin");
       store.chatgpt.active = id;
       saveCredentialStore(storePath, store);
       console.log(`pinned account: ${id}`);
@@ -389,10 +424,12 @@ function account(sub: string | undefined, id: string | undefined): void {
     case "remove": {
       const inChatgpt = store.chatgpt.accounts.some(a => a.id === id);
       const inKimi = (store.kimi?.accounts ?? []).some(a => a.id === id);
-      if (inChatgpt && inKimi) throw new ConfigError(`account id "${id}" exists in both credential kinds`);
-      if (!inChatgpt && !inKimi) throw new ConfigError(`no account with id "${id}"`);
+      const inGrok = (store.grok?.accounts ?? []).some(a => a.id === id);
+      if ([inChatgpt, inKimi, inGrok].filter(Boolean).length > 1) throw new ConfigError(`account id "${id}" exists in both credential kinds`);
+      if (!inChatgpt && !inKimi && !inGrok) throw new ConfigError(`no account with id "${id}"`);
       store.chatgpt.accounts = store.chatgpt.accounts.filter(a => a.id !== id);
       if (store.kimi) store.kimi.accounts = store.kimi.accounts.filter(a => a.id !== id);
+      if (store.grok) store.grok.accounts = store.grok.accounts.filter(a => a.id !== id);
       if (store.chatgpt.active === id) delete store.chatgpt.active;
       saveCredentialStore(storePath, store);
       console.log(`removed ${id}`);

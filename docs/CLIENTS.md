@@ -63,6 +63,11 @@ A Lite request that reaches a routed provider is refused with a 400 that says
 so, because code mode cannot be translated. Use a `provider/model` name, or
 route that model through the `chatgpt` provider.
 
+The `grok` preset uses a Grok subscription token from `modelplug login grok` at
+`https://api.x.ai/v1` with `openai-responses` and `passthrough: false`. API-key
+xAI accounts use the `xai` preset. Codex routing through `grok` requires the
+Responses IR path in Milestone 7b.
+
 Recommended config for both worlds:
 
 ```json

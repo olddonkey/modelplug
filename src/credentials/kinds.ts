@@ -1,5 +1,5 @@
 /** Credential kinds the config accepts. */
-export const CREDENTIAL_KINDS = ["api-key", "chatgpt", "kimi"] as const;
+export const CREDENTIAL_KINDS = ["api-key", "chatgpt", "kimi", "grok"] as const;
 export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
 
 /** Kinds whose provider speaks the client's own protocol natively; presets may override. */
