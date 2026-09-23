@@ -208,6 +208,13 @@ export interface Capabilities {
 /* ------------------------------------------------------- module contracts */
 
 export type WireName = "openai-chat" | "openai-responses" | "anthropic" | "gemini";
+
+/**
+ * Wires whose clients speak the dialect the public API accepts, so a provider on the same wire relays
+ * bytes unless `passthrough: false`. The Responses wire is not one: Codex's dialect fits only the
+ * ChatGPT backend, so its default follows the credential kind instead.
+ */
+export const PASSTHROUGH_WIRES: ReadonlySet<WireName> = new Set<WireName>(["anthropic"]);
 export type IngressName = "responses" | "messages";
 
 export interface ProviderTarget {

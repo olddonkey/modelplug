@@ -50,6 +50,57 @@ function cut(text: string, indexes: number[]): string[] {
 }
 
 const SCENARIOS: Partial<Record<WireName, Scenario>> = {
+  "openai-responses": {
+    provider: port => ({ wire: "openai-responses", baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: "k" }),
+    turn1: (req, res, body) => {
+      assert.equal(req.url, "/v1/responses");
+      assert.equal(req.headers.authorization, "Bearer k");
+      const request = JSON.parse(body) as Record<string, any>;
+      assert.equal(request.instructions, "You are a coding agent.");
+      assert.equal(request.stream, true);
+      assert.equal(request.store, false);
+      for (const key of ["client_metadata", "prompt_cache_key"]) assert.equal(request[key], undefined);
+      assert.ok(!request.tools.some((t: { type: string }) => t.type === "namespace"));
+      const tool = request.tools.find((t: { name: string }) => t.name === "apply_patch");
+      assert.ok(tool);
+      assert.equal(tool.type, "function");
+      assert.deepEqual(tool.parameters.required, ["input"]);
+      const args = JSON.stringify({ input: PATCH });
+      const pieces = cut(args, [args.indexOf('\\"') + 1, args.indexOf("\\\\") + 1, args.lastIndexOf("\\n") + 1, args.indexOf("\\t") + 1]);
+      assert.ok(pieces.length >= 4);
+      const frames = [
+        { type: "response.created", response: { model: "m" } },
+        { type: "response.output_item.added", output_index: 0, item: { id: "fc_1", type: "function_call", call_id: CALL_ID, name: "apply_patch", arguments: "" } },
+        ...pieces.map(delta => ({ type: "response.function_call_arguments.delta", output_index: 0, item_id: "fc_1", delta })),
+        { type: "response.function_call_arguments.done", output_index: 0, item_id: "fc_1", arguments: args },
+        { type: "response.output_item.done", output_index: 0, item: { id: "fc_1", type: "function_call", call_id: CALL_ID, name: "apply_patch", arguments: args } },
+        { type: "response.completed", response: { status: "completed", usage: { input_tokens: 50, output_tokens: 20 } } },
+      ];
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, frames.map(f => `event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`).join(""), "é");
+    },
+    turn2: (req, res, body) => {
+      assert.equal(req.url, "/v1/responses");
+      const request = JSON.parse(body) as { input: Array<Record<string, any>> };
+      const call = request.input.find(i => i.type === "function_call");
+      assert.ok(call);
+      assert.equal(call.call_id, CALL_ID);
+      assert.equal(call.name, "apply_patch");
+      assert.equal(JSON.parse(call.arguments).input, PATCH);
+      const output = request.input.find(i => i.type === "function_call_output");
+      assert.ok(output);
+      assert.equal(output.call_id, CALL_ID);
+      assert.equal(output.output, TOOL_OUTPUT);
+      const frames = [
+        { type: "response.created", response: { model: "m" } },
+        { type: "response.output_text.delta", delta: ANSWER.slice(0, 9) },
+        { type: "response.output_text.delta", delta: ANSWER.slice(9) },
+        { type: "response.completed", response: { status: "completed", usage: { input_tokens: 10, output_tokens: 4 } } },
+      ];
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, frames.map(f => `event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`).join(""), "é");
+    },
+  },
   anthropic: {
     provider: port => ({ wire: "anthropic", baseUrl: `http://127.0.0.1:${port}`, apiKey: "k" }),
     turn1: (req, res, body) => {
@@ -238,8 +289,6 @@ async function runScenario(scenario: Scenario): Promise<void> {
 }
 
 for (const name of Object.keys(WIRES) as WireName[]) {
-  // The pipeline relays Responses requests to this wire byte for byte instead of round-tripping the IR.
-  if (name === "openai-responses") continue;
   test(`conformance: apply_patch round trip through ${name}`, async () => {
     const scenario = SCENARIOS[name];
     assert.ok(scenario, `wire "${name}" is registered but has no conformance scenario`);

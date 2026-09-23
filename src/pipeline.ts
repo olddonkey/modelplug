@@ -1,8 +1,10 @@
 /**
  * Joins ingress, route, credentials, attempts and wires into request handlers.
  *
- * Each ingress uses the same attempt loop for same-protocol passthrough and
- * IR translation. Retries happen only before the first byte reaches the client.
+ * Each ingress uses the same attempt loop for same-protocol passthrough (a provider on
+ * the ingress's own wire with `passthrough` on: bytes relayed, headers injected, no payload
+ * rewrites) and IR translation (parse, encode, decode, respond). Retries happen only before
+ * the first byte reaches the client.
  */
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { DEFAULT_ATTEMPT_POLICY, RouteExhaustedError, runAttempts, type AttemptOutcome, type AttemptPolicy } from "./attempt.ts";
@@ -257,7 +259,7 @@ export function createPipeline(config: ResolvedConfig, deps: PipelineDeps = {}):
 
       let upstreamUrl: string;
       let upstreamInit: RequestInit;
-      const passthrough = provider.wire === ingress.passthroughWire;
+      const passthrough = provider.wire === ingress.passthroughWire && provider.passthrough;
       if (passthrough) {
         // Same-protocol passthrough: inject headers, relay bytes, read status and headers. No payload rewrites.
         const headers: Record<string, string> = { ...clientHeaders, "content-type": "application/json", ...providerTarget.headers, ...(wire.passthroughHeaders?.(providerTarget) ?? {}) };

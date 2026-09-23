@@ -2,8 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
-import { ACCOUNT_STRATEGIES, CREDENTIAL_KINDS, type AccountStrategy, type CredentialKind } from "./credentials/kinds.ts";
-import type { Capabilities, WireName } from "./ir.ts";
+import { ACCOUNT_STRATEGIES, CREDENTIAL_KINDS, PASSTHROUGH_BY_DEFAULT, type AccountStrategy, type CredentialKind } from "./credentials/kinds.ts";
+import { PASSTHROUGH_WIRES, type Capabilities, type WireName } from "./ir.ts";
 
 export const WIRES = ["openai-chat", "openai-responses", "anthropic", "gemini"] as const;
 const REASONING = ["none", "effort", "budget", "reasoning_content", "toggle"] as const;
@@ -27,6 +27,7 @@ const presetSchema = z.strictObject({
   wire: z.enum(WIRES),
   baseUrl: z.string().optional(),
   credential: z.enum(CREDENTIAL_KINDS).optional(),
+  passthrough: z.boolean().optional(),
   capabilities: capabilitiesSchema,
   note: z.string().optional(),
 });
@@ -40,6 +41,7 @@ const providerSchema = z.strictObject({
   headers: z.record(z.string(), z.string()).optional(),
   preset: z.string().optional(),
   credential: z.enum(CREDENTIAL_KINDS).optional(),
+  passthrough: z.boolean().optional(),
   /** Pools only: how an account is picked for a new conversation. */
   strategy: z.enum(ACCOUNT_STRATEGIES).optional(),
   models: z.array(z.string().min(1)).optional(),
@@ -68,6 +70,7 @@ export interface ResolvedProvider {
   headers: Record<string, string>;
   preset?: string;
   credential: CredentialKind;
+  passthrough: boolean;
   strategy?: AccountStrategy;
   models: string[];
   capabilities: Capabilities;
@@ -193,12 +196,14 @@ export function resolveConfig(config: Config, source: string): ResolvedConfig {
       problems.push(`provider "${name}": reasoning "toggle" needs "reasoningToggle"`);
       continue;
     }
+    const credential = p.credential ?? preset?.credential ?? "api-key";
     const resolved: ResolvedProvider = {
       name,
       wire,
       baseUrl,
       headers: p.headers ?? {},
-      credential: p.credential ?? preset?.credential ?? "api-key",
+      credential,
+      passthrough: p.passthrough ?? preset?.passthrough ?? (PASSTHROUGH_BY_DEFAULT.has(credential) || PASSTHROUGH_WIRES.has(wire)),
       models: p.models ?? [],
       capabilities,
     };

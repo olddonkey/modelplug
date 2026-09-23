@@ -71,3 +71,30 @@ test("environment-only single provider mode", () => {
   assert.equal(configFromEnv({}), undefined);
   assert.throws(() => configFromEnv({ MODELPLUG_WIRE: "carrier-pigeon" }), /MODELPLUG_WIRE/);
 });
+
+test("passthrough defaults by credential kind, presets and explicit overrides", () => {
+  const config = parseConfig({ providers: {
+    key: { wire: "openai-responses", baseUrl: "https://example.test/v1", apiKey: "k" },
+    openai: { preset: "openai", apiKey: "k" },
+    chatgpt: { preset: "chatgpt" },
+    anth: { preset: "anthropic", apiKey: "k" },
+    forced: { preset: "openai", apiKey: "k", passthrough: true },
+    disabled: { preset: "chatgpt", passthrough: false },
+    overridepreset: { preset: "anthropic", apiKey: "k", passthrough: false },
+    credentialoverride: { preset: "openai", credential: "chatgpt" },
+  } }, "test");
+  for (const name of ["key", "openai", "disabled", "overridepreset"]) assert.equal(config.providers[name]?.passthrough, false, name);
+  for (const name of ["chatgpt", "anth", "forced", "credentialoverride"]) assert.equal(config.providers[name]?.passthrough, true, name);
+  assert.throws(() => parseConfig({ providers: { p: { preset: "openai", passthrough: "yes" } } }, "test"), ConfigError);
+});
+
+test("a provider on the anthropic wire relays bytes by default; the switch still turns it off", () => {
+  const config = parseConfig({ providers: {
+    bare: { wire: "anthropic", baseUrl: "https://a.test", apiKey: "k" },
+    off: { wire: "anthropic", baseUrl: "https://a.test", apiKey: "k", passthrough: false },
+    resp: { wire: "openai-responses", baseUrl: "https://r.test/v1", apiKey: "k" },
+  } }, "test");
+  assert.equal(config.providers.bare?.passthrough, true);
+  assert.equal(config.providers.off?.passthrough, false);
+  assert.equal(config.providers.resp?.passthrough, false);
+});
