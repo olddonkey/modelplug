@@ -544,26 +544,86 @@ Exit: Claude Code runs a coding task against DeepSeek through modelplug; and a
 round-trip property test shows `messages` → IR → `anthropic` wire reproduces the
 original request's blocks for text, tools and thinking.
 
-## Milestone 7: `gemini`, `openai-responses` through the IR, Grok and Kimi logins
+## Milestone 7: Kimi and Grok logins, `openai-responses` through the IR, `gemini`
 
-Gemini: `systemInstruction`, `contents` with `user`/`model`, `functionCall` /
-`functionResponse`, thought signatures as `Opaque{kind:"thought_signature"}`,
-`thinkingConfig.thinkingBudget`, `streamGenerateContent?alt=sse`,
-`usageMetadata`, and a fixture-backed JSON Schema sanitizer for keywords Gemini
-rejects.
+Four independent units, each its own PR off `main`. Order follows what the
+maintainer uses daily: the Kimi subscription first.
 
-openai-responses via the IR (for API-key OpenAI, xAI, and any Responses
-gateway): decisions deferred from M2 land here: whether `freeform` tools enter
-the IR, whether hosted tools get a `Turn.hosted` list for wires that can pass
-them through, and whether upstream `encrypted_content` rides as an `Opaque`.
+### 7a. Kimi login: a second credential kind
 
-Grok and Kimi logins as two more credential kinds in `src/credentials/`, only
-because the maintainer uses them. Grok's transport has a history of breaking;
-every quirk is a fixture in the wire, and the login lives in its own file so a
-breakage is contained.
+Kimi Code is a subscription; its API (`https://api.kimi.com/coding/v1`, Chat
+Completions) takes the OAuth access token as a Bearer key and the token lives
+about an hour. Protocol facts (device authorization grant, public client):
 
-Exit: conformance scenario green on all four wires; Codex runs the M2 task
-against Gemini and against OpenAI via API key.
+| Step | Request |
+|---|---|
+| start | `POST https://auth.kimi.com/api/oauth/device_authorization`, form body `client_id=17e5f671-d194-4dfb-9706-5516cb48c098` → `{user_code, device_code, verification_uri, verification_uri_complete?, expires_in, interval}` |
+| poll | `POST https://auth.kimi.com/api/oauth/token`, form body `grant_type=urn:ietf:params:oauth:grant-type:device_code`, `device_code`, `client_id` → `{access_token, refresh_token, expires_in}`, or `{error: "authorization_pending" \| "slow_down" \| "expired_token" \| "access_denied", error_description?, interval?}`; poll every `interval` seconds (default 5), add 5 s on `slow_down`, give up at `expires_in` (default 15 min) |
+| refresh | `POST https://auth.kimi.com/api/oauth/token`, form body `grant_type=refresh_token`, `refresh_token`, `client_id` → same token shape; a missing `refresh_token` in the answer keeps the old one |
+| headers on all three | `User-Agent: KimiCLI/0.14.0`, `X-Msh-Platform: kimi_code_cli`, `X-Msh-Version: 0.14.0`, `X-Msh-Device-Name` (hostname), `X-Msh-Device-Model` (e.g. `macOS 25.0.0 arm64`), `X-Msh-Os-Version`, `X-Msh-Device-Id` (32 hex chars, generated once and kept in `credentials.json`) |
+| identity | JWT claims of the access token, then the refresh token: `user_id` else `sub` is the account id; `email` lowercased |
+
+Spec:
+
+1. `src/credentials/kinds.ts`: `CREDENTIAL_KINDS` gains `"kimi"`.
+2. `src/credentials/store.ts`: the store gains an optional `kimi: {accounts: KimiAccount[], active?: string, deviceId?: string}` beside `chatgpt` (same `schemaVersion: 1`; an old file without the key loads as empty). `KimiAccount`: `id` (the account id), `email?`, `accessToken`, `refreshToken`, `expiresAt` (ms since epoch, from `expires_in` minus a five-minute skew), `lastRefresh`, `source: "login"`, `needsLogin?`. `saveCredentialStore` unchanged (mode 0600, atomic).
+3. `src/credentials/kimi.ts`: `kimiCredentials(provider, deps)` implementing `CredentialProvider` for one account (the pool from milestone 4 stays ChatGPT-only in this unit; a second Kimi account replaces the first): `resolve` refreshes when `expiresAt` is within five minutes or after a 401 once (`report` answers `{retry: true}` exactly like the ChatGPT kind, then marks `needsLogin` on a second 401), returns `{id, apiKey: accessToken}` and no extra headers (the API accepts a bare Bearer token: verified live 2026-09-23); `status()` returns one line per account (`email (kimi) token valid until … / NEEDS LOGIN`). `loginKimi(deps)` runs the device flow: prints the verification URL and the user code through `deps.log`, polls, returns the account; `deps` has `fetch`, `now`, `oauthHost` (default `https://auth.kimi.com`), `timeoutMs`, `log`, `deviceId`. A refresh that answers 400/401 marks `needsLogin` and throws `CredentialError("kimi", …)`.
+4. `src/credentials/index.ts`: `credentialProviderFor` dispatches `"kimi"`.
+5. `src/presets.json`: preset `kimi` — wire `openai-chat`, baseUrl `https://api.kimi.com/coding/v1`, credential `kimi`, capabilities `reasoning: "reasoning_content"`, `tools`, `images`, `temperature: true`, note "Kimi Code subscription; log in with `modelplug login kimi`. API-key users of the Moonshot platform use the `moonshot` preset."
+6. CLI (`src/main.ts`): `modelplug login kimi` (device flow; prints the URL and code, waits), `modelplug logout kimi`, `modelplug account list` lists both kinds with a kind column, `account use <id>` / `account remove <id>` find the id in either kind (`use auto` unpins whichever kind holds it; pinning is a no-op for Kimi with one account). `check` shows `kimi accounts=N`. The usage line printed at `start` for passthrough is unchanged.
+7. Tests: `test/credentials-kimi.test.ts` — the device flow against a fake auth server (`authorization_pending` then `slow_down` then a token; the poll interval grows; `access_denied` and `expired_token` become errors; the common headers are sent; the device id is generated once and persisted), refresh (proactive on expiry, reactive on one 401 via `report`, second 401 marks `needsLogin`, a refresh answer without `refresh_token` keeps the old one, a 400 marks `needsLogin`), identity from the JWT claims, `status()`. `test/boundary.test.ts` stays green (`src/credentials/` is exempt). `test/config.test.ts`: the `kimi` preset resolves with credential kind `kimi`.
+8. Docs: README quick start gains `modelplug login kimi`; `docs/CLIENTS.md` mentions the `kimi` preset; `docs/PLAN.md` M7 status.
+
+Exit: with the maintainer's Kimi subscription, `modelplug login kimi` completes in the browser, `check` reports the kimi provider reachable with its model list, and Codex runs the milestone 3 task through `kimi/k3` with the token refreshed by modelplug alone (no opencodex).
+
+### 7b. `openai-responses` through the IR, and an explicit passthrough switch
+
+Today every `openai-responses` provider is served by the same-protocol
+passthrough (the ChatGPT backend) and the wire has no encode/decode. Two things
+need the IR path: Claude Code (the `messages` ingress) talking to OpenAI or xAI
+API keys, and API-key providers that reject Codex's private dialect fields.
+
+1. Provider config gains `passthrough?: boolean` (schema + `ResolvedProvider`). Default: `true` when the credential kind is `chatgpt`, `false` otherwise; a preset may set it. The pipeline's passthrough decision becomes `ingress-and-wire match AND provider.passthrough`; the `messages` → `anthropic` passthrough follows the same switch (default `true` for the `anthropic` preset, i.e. API-key Anthropic is relayed as today). Document the switch in README's config section.
+2. `src/wire/openai-responses.ts` encode: `POST {baseUrl}/responses` with `Authorization: Bearer`; `instructions` = `Turn.system`; `input[]`: user messages as `{type: "message", role: "user", content: [input_text | input_image {image_url: data URL or url, detail: "auto"}]}`, assistant text as `{type: "message", role: "assistant", content: [output_text]}`, tool calls as `function_call {call_id, name, arguments}`, tool results as `function_call_output {call_id, output}` (string; image parts appended as a following user message with `input_image`, like the Chat wire does), reasoning parts with a same-provider Opaque of kind `encrypted_reasoning` as `{type: "reasoning", id, summary: [], encrypted_content}` (foreign Opaques dropped, reasoning without an Opaque dropped); `tools[]` as `{type: "function", name, description, parameters, strict}`; `tool_choice` auto/none/required/`{type: "function", name}`; `parallel_tool_calls`; `reasoning: {effort}` clamped to `caps.reasoningLevels` (`minimal` passes through, `xhigh` passes through) plus `summary: "auto"` when the client asked for summaries; `max_output_tokens`, `temperature`/`top_p` when `caps.temperature`; `text: {format: {type: "json_schema", name, schema, strict}}`; `store: false`; `include: ["reasoning.encrypted_content"]`; `stream`. Never `previous_response_id`.
+3. decode over `decodeSse`: `response.output_text.delta` → `text_delta`; `response.reasoning_summary_text.delta` → `reasoning_delta`; `response.output_item.done` for a `reasoning` item with `encrypted_content` → `reasoning_opaque {kind: "encrypted_reasoning", data: encrypted_content}`; `response.output_item.added` for `function_call` → `tool_call_start` (id = `call_id`), `response.function_call_arguments.delta` → `tool_call_delta`, `response.function_call_arguments.done`/`output_item.done` → `tool_call_end`; `response.completed` → `done` (status `completed` → `end_turn` or `tool_use` when a call was emitted; `response.incomplete` with `max_output_tokens` → `max_tokens`, `content_filter` → `content_filter`); `response.failed` and `error` events → the classified error; usage from `response.completed.response.usage` (`input_tokens` incl. cached; `input_tokens_details.cached_tokens`, `output_tokens_details.reasoning_tokens`); hosted-tool items (`web_search_call`, …) ignored; a stream ending without a terminal event → `upstream` error, retryable only if nothing was emitted.
+4. classify stays `classifyOpenAiError`; `modelsRequest`/`parseModels` stay.
+5. Tests: `test/wire-openai-responses.test.ts` grows encode/decode cases (synthetic frames modelled on the recorded `test/fixtures/responses/classic/*.response.sse`, which are the ground truth for event names and order — a decode test may read `classic/turn-1-first.response.sse` directly); an `openai-responses` conformance scenario (the conformance test's skip for this wire goes away; the scenario asserts the Responses request shape and streams `function_call` events); `test/pipeline.test.ts` gains: an `openai-responses` API-key provider with `passthrough: false` goes through the IR (Codex's `namespace` tools flattened, `client_metadata` absent upstream), the `chatgpt` provider still relays byte for byte.
+6. Docs: README config section (`passthrough`), `src/wire/README.md` row 4, PLAN status.
+
+Exit: conformance green on three wires; the pipeline test proves both paths; live acceptance against an OpenAI or xAI key when one is available.
+
+### 7c. `gemini` wire
+
+Gemini API (`generativelanguage.googleapis.com`), API key in the
+`x-goog-api-key` header. Spec (no fixtures on the dev machine; the wire is
+written against the public API reference and recorded when a key exists):
+
+1. encode: `POST {baseUrl}/v1beta/models/{model}:streamGenerateContent?alt=sse` (`:generateContent` when not streaming); `systemInstruction: {parts: [{text}]}`; `contents[]` with roles `user`/`model`: text parts, `inlineData {mimeType, data}` for base64 images, `fileData {fileUri, mimeType}` for URL images; assistant tool calls as `functionCall {name, args}` parts (arguments parsed, `{}` when unparseable) each carrying a `thoughtSignature` when the tool call's Opaque (kind `thought_signature`, same provider) has one; tool results as a `user` content with `functionResponse {name, response: {output: text}}` parts, several results in one content; reasoning parts with a same-provider Opaque of kind `thought_signature` and no tool call → a `thought: true` part is NOT replayed (only signatures on function calls are); `tools: [{functionDeclarations: [{name, description, parameters}]}]` with the schema sanitised: strip `additionalProperties`, `$schema`, `default`, `examples`, `strict`, `format` values Gemini rejects (keep `enum`, `date-time`), convert `type: ["string","null"]` to `type: "string", nullable: true`; `toolConfig.functionCallingConfig.mode` AUTO/NONE/ANY (+ `allowedFunctionNames` for a named choice); `generationConfig`: `maxOutputTokens`, `temperature`/`topP` when `caps.temperature`, `stopSequences`, `responseMimeType: "application/json"` + `responseSchema` for json_schema, `thinkingConfig: {includeThoughts: true, thinkingBudget}` from the effort table (low 2048 / medium 8192 / high 16384 / xhigh 24576 / max 32768; `minimal` → 0; absent → omit).
+2. decode over `decodeSse`: each frame is a `GenerateContentResponse`; `candidates[0].content.parts[]`: `text` with `thought: true` → `reasoning_delta`, plain `text` → `text_delta`, `functionCall` → `tool_call_start` (id synthesised as `call_<n>` per response, since Gemini has none) + one `tool_call_delta` with the JSON args + `tool_call_end` carrying `Opaque{kind: "thought_signature", data: thoughtSignature}` when present; `finishReason` `STOP` → `end_turn`/`tool_use`, `MAX_TOKENS` → `max_tokens`, `SAFETY`/`RECITATION`/`PROHIBITED_CONTENT` → `content_filter`; `usageMetadata` → `promptTokenCount` (+ `cachedContentTokenCount` as cached), `candidatesTokenCount` + `thoughtsTokenCount` as output with `reasoningTokens`; `promptFeedback.blockReason` before any candidate → `content_filter` error; a frame with `error` → classified.
+3. classify: `{error: {code, status, message}}`: 400 `INVALID_ARGUMENT` invalid_request (context wording → context_length), 401/403 auth, 404 not_found, 429 `RESOURCE_EXHAUSTED` rate_limit (quota wording → quota), 500/503 upstream/overloaded retryable, 504 upstream.
+4. models: `GET {baseUrl}/v1beta/models` → `models[].name` with the `models/` prefix stripped.
+5. Tests: `test/wire-gemini.test.ts` (encode incl. schema sanitiser cases, decode incl. thought parts and signatures, classify, models) and a `gemini` conformance scenario (the tool call id is synthesised, so the scenario checks the name and arguments and that the replayed `functionResponse` carries the same name and output).
+6. Docs: `src/wire/README.md` row 3, README status, PLAN status.
+
+Exit: conformance green on four wires; live acceptance when a Google key exists.
+
+### 7d. Grok login: a third credential kind
+
+xAI's Grok subscription login is an OIDC authorization-code flow with PKCE
+(public client `b1a00492-073a-47ea-816f-4c329264a828`, scope
+`openid profile email offline_access grok-cli:access api:access`, endpoints
+from `https://auth.x.ai/.well-known/openid-configuration`, callback
+`http://localhost:56121/callback`, identity from the id token's `sub`/`email`).
+The API is `https://api.x.ai/v1` (Responses wire) with the access token as a
+Bearer key; refresh with `grant_type=refresh_token` at the discovered token
+endpoint.
+
+1. `src/credentials/grok.ts` mirrors the Kimi kind (single account, proactive and reactive refresh, `needsLogin`, `status()`), reusing the PKCE and callback-server pieces from `chatgpt-login.ts` (extract `pkcePair`, the callback listener and the browser opener into `src/credentials/oauth.ts` — same behaviour, no new dependency). Kind `"grok"`, store key `grok`, preset `grok` (wire `openai-responses`, baseUrl `https://api.x.ai/v1`, credential `grok`, `passthrough: false` — Codex's private dialect is translated through the IR of 7b).
+2. CLI: `login grok` / `logout grok`; `account` commands see the third kind.
+3. Tests: `test/credentials-grok.test.ts` against fake discovery, authorize (a scripted browser hits the callback), token and refresh endpoints; endpoint host validation (only `auth.x.ai` / `accounts.x.ai` over https); `test/config.test.ts` for the preset.
+4. Docs: README quick start, CLIENTS, PLAN status.
+
+Exit: with a Grok subscription, `login grok` completes and Codex runs a task through `grok/<model>`; the conformance scenario of 7b covers the wire.
 
 ## Milestone 8: 0.1.0
 
