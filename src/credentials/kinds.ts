@@ -1,5 +1,5 @@
 /** Credential kinds the config accepts. */
-export const CREDENTIAL_KINDS = ["api-key", "chatgpt"] as const;
+export const CREDENTIAL_KINDS = ["api-key", "chatgpt", "kimi"] as const;
 export type CredentialKind = (typeof CREDENTIAL_KINDS)[number];
 
 /** How a pool picks an account for a new conversation. */

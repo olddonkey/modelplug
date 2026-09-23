@@ -54,6 +54,11 @@ Codex chooses its wire dialect from the model name, so the name you put in
 | `provider/model` (`deepseek/deepseek-v4`, `kimi/k3`) | The classic Responses dialect: `instructions`, function tools, `function_call` items | Translates to the provider's wire and back. |
 | `chatgpt/gpt-5.6-sol` | Classic, because the name has a prefix | Works, but Codex loses code mode. Prefer the bare name with `defaultProvider`. |
 
+For a Kimi Code subscription, run `modelplug login kimi`, configure a provider
+with `{ "preset": "kimi" }`, and select `kimi/k3`. The login prints a URL and
+code to enter in your browser; modelplug refreshes the token automatically.
+The `moonshot` preset is for Moonshot API keys.
+
 A Lite request that reaches a routed provider is refused with a 400 that says
 so, because code mode cannot be translated. Use a `provider/model` name, or
 route that model through the `chatgpt` provider.

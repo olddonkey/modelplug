@@ -59,6 +59,11 @@ modelplug login chatgpt                     # or log in through the browser; rep
 MODELPLUG_PRESET=chatgpt modelplug
 modelplug print codex --model gpt-5.5       # paste into ~/.codex/config.toml
 
+# Kimi Code subscription: visit the printed URL and enter the printed code
+modelplug login kimi
+MODELPLUG_PRESET=kimi modelplug
+modelplug print codex --model kimi/k3
+
 # or an API-key provider, no config file needed
 MODELPLUG_PRESET=deepseek DEEPSEEK_API_KEY=sk-... modelplug
 modelplug print codex --model deepseek-v4    # a provider/model name keeps Codex in its classic dialect
