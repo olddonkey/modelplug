@@ -17,6 +17,17 @@ const accountSchema = z.strictObject({
   needsLogin: z.boolean().optional(),
 });
 
+const kimiAccountSchema = z.strictObject({
+  id: z.string().min(1),
+  email: z.string().optional(),
+  accessToken: z.string().min(1),
+  refreshToken: z.string().min(1),
+  expiresAt: z.number().finite(),
+  lastRefresh: z.string(),
+  source: z.literal("login"),
+  needsLogin: z.boolean().optional(),
+});
+
 const grokAccountSchema = z.strictObject({
   id: z.string().min(1),
   email: z.string().optional(),
@@ -35,10 +46,15 @@ const storeSchema = z.strictObject({
     accounts: z.array(accountSchema),
     active: z.string().optional(),
   }),
+  kimi: z.strictObject({
+    accounts: z.array(kimiAccountSchema),
+    deviceId: z.string().regex(/^[0-9a-f]{32}$/).optional(),
+  }).optional(),
   grok: z.strictObject({ accounts: z.array(grokAccountSchema) }).optional(),
 });
 
 export type ChatgptAccount = z.infer<typeof accountSchema>;
+export type KimiAccount = z.infer<typeof kimiAccountSchema>;
 export type GrokAccount = z.infer<typeof grokAccountSchema>;
 export type CredentialStore = z.infer<typeof storeSchema>;
 

@@ -34,6 +34,8 @@ interface Scenario {
   turn1: FakeHandler;
   /** Turn 2: assert the call and its output were replayed verbatim, then stream a text answer. */
   turn2: FakeHandler;
+  /** The upstream has no call ids; the wire assigns call_0. */
+  synthesizedCallId?: boolean;
 }
 
 /** Cut `text` at the given indexes (sorted, deduplicated, in range). */
@@ -50,6 +52,154 @@ function cut(text: string, indexes: number[]): string[] {
 }
 
 const SCENARIOS: Partial<Record<WireName, Scenario>> = {
+  gemini: {
+    provider: port => ({ wire: "gemini", baseUrl: `http://127.0.0.1:${port}`, apiKey: "k" }),
+    synthesizedCallId: true,
+    turn1: (req, res, body) => {
+      assert.equal(req.url, "/v1beta/models/m:streamGenerateContent?alt=sse");
+      assert.equal(req.headers["x-goog-api-key"], "k");
+      const request = JSON.parse(body) as Record<string, any>;
+      assert.equal(request.systemInstruction.parts[0].text, "You are a coding agent.");
+      const tool = request.tools[0].functionDeclarations.find((t: {name:string}) => t.name === "apply_patch");
+      assert.ok(tool);
+      assert.deepEqual(tool.parameters.required, ["input"]);
+      assert.equal(tool.parameters.additionalProperties, undefined);
+      const last = request.contents.at(-1);
+      assert.equal(last.role, "user");
+      assert.ok(last.parts.some((p: {text?:string}) => p.text?.includes(FILE)));
+      const frames = [
+        { candidates: [{ content: { parts: [{ functionCall: { name: "apply_patch", args: { input: PATCH } }, thoughtSignature: "sig-1" }] } }] },
+        { candidates: [{ finishReason: "STOP" }], usageMetadata: { promptTokenCount: 50, candidatesTokenCount: 20 } },
+      ];
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join(""), "é");
+    },
+    turn2: (_req, res, body) => {
+      const request = JSON.parse(body) as { contents: Array<{role:string;parts:Array<Record<string, any>>}> };
+      const assistant = request.contents.find(c => c.role === "model" && c.parts.some(p => p.functionCall));
+      assert.ok(assistant);
+      const call = assistant.parts.find(p => p.functionCall);
+      assert.equal(call?.functionCall.name, "apply_patch");
+      assert.equal(call?.functionCall.args.input, PATCH);
+      assert.equal(call?.thoughtSignature, "sig-1");
+      const index = request.contents.indexOf(assistant);
+      const result = request.contents[index + 1];
+      assert.equal(result?.role, "user");
+      assert.equal(result.parts[0]?.functionResponse.name, "apply_patch");
+      assert.equal(result.parts[0]?.functionResponse.response.output, TOOL_OUTPUT);
+      const frames = [{ candidates: [{ content: { parts: [{ text: ANSWER.slice(0, 9) }] } }] }, { candidates: [{ content: { parts: [{ text: ANSWER.slice(9) }] }, finishReason: "STOP" }] }];
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, frames.map(f => `data: ${JSON.stringify(f)}\n\n`).join(""), "é");
+    },
+  },
+  "openai-responses": {
+    provider: port => ({ wire: "openai-responses", baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: "k" }),
+    turn1: (req, res, body) => {
+      assert.equal(req.url, "/v1/responses");
+      assert.equal(req.headers.authorization, "Bearer k");
+      const request = JSON.parse(body) as Record<string, any>;
+      assert.equal(request.instructions, "You are a coding agent.");
+      assert.equal(request.stream, true);
+      assert.equal(request.store, false);
+      for (const key of ["client_metadata", "prompt_cache_key"]) assert.equal(request[key], undefined);
+      assert.ok(!request.tools.some((t: { type: string }) => t.type === "namespace"));
+      const tool = request.tools.find((t: { name: string }) => t.name === "apply_patch");
+      assert.ok(tool);
+      assert.equal(tool.type, "function");
+      assert.deepEqual(tool.parameters.required, ["input"]);
+      const args = JSON.stringify({ input: PATCH });
+      const pieces = cut(args, [args.indexOf('\\"') + 1, args.indexOf("\\\\") + 1, args.lastIndexOf("\\n") + 1, args.indexOf("\\t") + 1]);
+      assert.ok(pieces.length >= 4);
+      const frames = [
+        { type: "response.created", response: { model: "m" } },
+        { type: "response.output_item.added", output_index: 0, item: { id: "fc_1", type: "function_call", call_id: CALL_ID, name: "apply_patch", arguments: "" } },
+        ...pieces.map(delta => ({ type: "response.function_call_arguments.delta", output_index: 0, item_id: "fc_1", delta })),
+        { type: "response.function_call_arguments.done", output_index: 0, item_id: "fc_1", arguments: args },
+        { type: "response.output_item.done", output_index: 0, item: { id: "fc_1", type: "function_call", call_id: CALL_ID, name: "apply_patch", arguments: args } },
+        { type: "response.completed", response: { status: "completed", usage: { input_tokens: 50, output_tokens: 20 } } },
+      ];
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, frames.map(f => `event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`).join(""), "é");
+    },
+    turn2: (req, res, body) => {
+      assert.equal(req.url, "/v1/responses");
+      const request = JSON.parse(body) as { input: Array<Record<string, any>> };
+      const call = request.input.find(i => i.type === "function_call");
+      assert.ok(call);
+      assert.equal(call.call_id, CALL_ID);
+      assert.equal(call.name, "apply_patch");
+      assert.equal(JSON.parse(call.arguments).input, PATCH);
+      const output = request.input.find(i => i.type === "function_call_output");
+      assert.ok(output);
+      assert.equal(output.call_id, CALL_ID);
+      assert.equal(output.output, TOOL_OUTPUT);
+      const frames = [
+        { type: "response.created", response: { model: "m" } },
+        { type: "response.output_text.delta", delta: ANSWER.slice(0, 9) },
+        { type: "response.output_text.delta", delta: ANSWER.slice(9) },
+        { type: "response.completed", response: { status: "completed", usage: { input_tokens: 10, output_tokens: 4 } } },
+      ];
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, frames.map(f => `event: ${f.type}\ndata: ${JSON.stringify(f)}\n\n`).join(""), "é");
+    },
+  },
+  anthropic: {
+    provider: port => ({ wire: "anthropic", baseUrl: `http://127.0.0.1:${port}`, apiKey: "k" }),
+    turn1: (req, res, body) => {
+      assert.equal(req.url, "/v1/messages");
+      assert.equal(req.headers["x-api-key"], "k");
+      assert.equal(req.headers["anthropic-version"], "2023-06-01");
+      const request = JSON.parse(body) as Record<string, any>;
+      assert.equal(request.stream, true);
+      assert.equal(typeof request.system, "string");
+      const tool = (request.tools as Array<Record<string, any>>).find(t => t.name === "apply_patch");
+      assert.ok(tool, "apply_patch is lowered to a function tool");
+      assert.deepEqual(tool.input_schema.required, ["input"]);
+      assert.equal(tool.eager_input_streaming, true);
+      const last = request.messages.at(-1) as { role: string; content: Array<{ type: string; text?: string }> };
+      assert.equal(last.role, "user");
+      assert.ok(last.content.some(b => b.type === "text" && b.text?.includes(FILE)), "the prompt reached the upstream intact");
+      const args = JSON.stringify({ input: PATCH });
+      const pieces = cut(args, [args.indexOf('\\"') + 1, args.indexOf("\\\\") + 1, args.lastIndexOf("\\n") + 1, args.indexOf("\\t") + 1]);
+      assert.ok(pieces.length >= 4, "the arguments are split across several chunks");
+      const frame = (type: string, data: Record<string, unknown>) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+      const stream = [
+        frame("message_start", { message: { model: "m", usage: { input_tokens: 50, output_tokens: 1 } } }),
+        frame("content_block_start", { index: 0, content_block: { type: "tool_use", id: CALL_ID, name: "apply_patch", input: {} } }),
+        ...pieces.map(partial_json => frame("content_block_delta", { index: 0, delta: { type: "input_json_delta", partial_json } })),
+        frame("content_block_stop", { index: 0 }),
+        frame("message_delta", { delta: { stop_reason: "tool_use" }, usage: { output_tokens: 20 } }),
+        frame("message_stop", {}),
+      ].join("");
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, stream, "é");
+    },
+    turn2: (_req, res, body) => {
+      const request = JSON.parse(body) as { messages: Array<Record<string, any>> };
+      const assistant = request.messages.find(m => m.role === "assistant" && m.content.some((b: { type: string }) => b.type === "tool_use"));
+      assert.ok(assistant, "the replayed call is an assistant tool_use block");
+      const uses = assistant.content.filter((b: { type: string }) => b.type === "tool_use");
+      assert.equal(uses.length, 1);
+      assert.equal(uses[0].id, CALL_ID);
+      assert.equal(uses[0].name, "apply_patch");
+      assert.deepEqual(uses[0].input, { input: PATCH });
+      const result = request.messages[request.messages.indexOf(assistant) + 1];
+      assert.equal(result?.role, "user");
+      assert.deepEqual(result.content[0], { type: "tool_result", tool_use_id: CALL_ID, content: TOOL_OUTPUT });
+      const frame = (type: string, data: Record<string, unknown>) => `event: ${type}\ndata: ${JSON.stringify({ type, ...data })}\n\n`;
+      const stream = [
+        frame("message_start", { message: { model: "m", usage: { input_tokens: 60, output_tokens: 1 } } }),
+        frame("content_block_start", { index: 0, content_block: { type: "text", text: "" } }),
+        frame("content_block_delta", { index: 0, delta: { type: "text_delta", text: ANSWER.slice(0, 9) } }),
+        frame("content_block_delta", { index: 0, delta: { type: "text_delta", text: ANSWER.slice(9) } }),
+        frame("content_block_stop", { index: 0 }),
+        frame("message_delta", { delta: { stop_reason: "end_turn" }, usage: { output_tokens: 5 } }),
+        frame("message_stop", {}),
+      ].join("");
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      writeInPieces(res, stream, "é");
+    },
+  },
   "openai-chat": {
     provider: port => ({ wire: "openai-chat", baseUrl: `http://127.0.0.1:${port}/v1`, apiKey: "k" }),
     turn1: (req, res, body) => {
@@ -123,13 +273,13 @@ function turn1Request(model: string): Record<string, unknown> {
   };
 }
 
-function turn2Request(model: string, callItem: Record<string, any>): Record<string, unknown> {
+function turn2Request(model: string, outputItems: Array<Record<string, any>>, callId: string): Record<string, unknown> {
   return {
     ...turn1Request(model),
     input: [
       { type: "message", role: "user", content: [{ type: "input_text", text: `Apply this patch to ${FILE}:\n${PATCH}` }] },
-      { type: "custom_tool_call", id: callItem.id, call_id: callItem.call_id, name: callItem.name, input: callItem.input, status: "completed" },
-      { type: "custom_tool_call_output", call_id: CALL_ID, output: TOOL_OUTPUT },
+      ...outputItems,
+      { type: "custom_tool_call_output", call_id: callId, output: TOOL_OUTPUT },
     ],
   };
 }
@@ -151,9 +301,9 @@ async function runScenario(scenario: Scenario): Promise<void> {
     const added = events1.find(e => e.type === "response.output_item.added" && e.data.item.type === "custom_tool_call");
     assert.ok(added, `custom_tool_call item announced; saw ${events1.map(e => e.type).join(", ")}`);
     assert.equal(added.data.item.name, "apply_patch");
-    assert.equal(added.data.item.call_id, CALL_ID);
+    assert.equal(added.data.item.call_id, scenario.synthesizedCallId ? "call_0" : CALL_ID);
     const deltas = events1.filter(e => e.type === "response.custom_tool_call_input.delta");
-    assert.ok(deltas.length >= 2, "the input streams in more than one delta");
+    assert.ok(deltas.length >= (scenario.synthesizedCallId ? 1 : 2), "the input is streamed in deltas");
     assert.equal(deltas.map(e => e.data.delta).join(""), PATCH, "input deltas are the raw patch text, not JSON");
     const inputDone = events1.find(e => e.type === "response.custom_tool_call_input.done");
     assert.equal(inputDone?.data.input, PATCH);
@@ -164,10 +314,11 @@ async function runScenario(scenario: Scenario): Promise<void> {
     assert.ok(!events1.some(e => e.type.startsWith("response.function_call_arguments")), "no function-call events leak for a custom tool");
     const completed = events1.at(-1)!;
     assert.equal(completed.type, "response.completed");
-    assert.deepEqual((completed.data.response.output as Array<{ type: string }>).map(o => o.type), ["custom_tool_call"]);
+    assert.deepEqual((completed.data.response.output as Array<{ type: string }>).map(o => o.type), scenario.synthesizedCallId ? ["custom_tool_call", "reasoning"] : ["custom_tool_call"]);
     assert.equal(completed.data.response.usage.input_tokens, 50);
 
-    const events2 = await post(turn2Request("p/m", item.data.item));
+    const outputItems = events1.filter(e => e.type === "response.output_item.done").map(e => e.data.item);
+    const events2 = await post(turn2Request("p/m", outputItems, item.data.item.call_id));
     const text = events2.filter(e => e.type === "response.output_text.delta").map(e => e.data.delta).join("");
     assert.equal(text, ANSWER);
     const completed2 = events2.at(-1)!;
@@ -181,8 +332,6 @@ async function runScenario(scenario: Scenario): Promise<void> {
 }
 
 for (const name of Object.keys(WIRES) as WireName[]) {
-  // The pipeline relays Responses requests to this wire byte for byte instead of round-tripping the IR.
-  if (name === "openai-responses") continue;
   test(`conformance: apply_patch round trip through ${name}`, async () => {
     const scenario = SCENARIOS[name];
     assert.ok(scenario, `wire "${name}" is registered but has no conformance scenario`);

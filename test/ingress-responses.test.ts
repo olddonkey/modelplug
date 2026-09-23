@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import type { Event, ResponseSink } from "../src/ir.ts";
-import { decodeOpaque, encodeOpaque, IngressError, parseResponsesRequest, respondResponses } from "../src/ingress/responses.ts";
+import { decodeOpaque, decodeOpaqueEnvelope, encodeOpaque, IngressError, parseResponsesRequest, respondResponses } from "../src/ingress/responses.ts";
 
 const fixture = (name: string): unknown => JSON.parse(readFileSync(new URL(`./fixtures/responses/classic/${name}.request.json`, import.meta.url), "utf8"));
 const lite = (name: string): unknown => JSON.parse(readFileSync(new URL(`./fixtures/responses/lite/${name}.request.json`, import.meta.url), "utf8"));
@@ -78,7 +78,7 @@ test("local refusals and lowering of custom tools, tool_choice, allowed_tools, f
   assert.deepEqual(parsed.turn.tools!.map(t => t.name), ["shell", "agents__spawn"]);
   assert.equal(parsed.turn.toolChoice, "required");
   assert.ok(parsed.lowering.customTools.has("apply_patch"));
-  assert.deepEqual(parsed.turn.reasoning, { effort: "max", summary: "auto" });
+  assert.deepEqual(parsed.turn.reasoning, { effort: "xhigh", summary: "auto" });
   assert.deepEqual(parsed.turn.responseFormat, { type: "json_schema", name: "out", schema: { type: "object" }, strict: true });
   assert.deepEqual(parsed.turn.sampling, { maxOutputTokens: 512, temperature: 0.2 });
   assert.equal(parsed.stream, false);
@@ -121,6 +121,28 @@ test("replayed reasoning rides as an opaque envelope only when it is ours", () =
   assert.match(parsed.lowering.warnings.join(" "), /another backend/);
 });
 
+test("parse: a bound reasoning envelope attaches to its call; unknown ids remain reasoning", () => {
+  const opaque = { provider: "p", model: "m", kind: "thought_signature", data: "sig-1" };
+  const bound = encodeOpaque(opaque, "c1");
+  assert.deepEqual(decodeOpaqueEnvelope(bound), { opaque, callId: "c1" });
+  assert.deepEqual(decodeOpaque(bound), opaque);
+  const parsed = parseResponsesRequest({ model: "m", input: [
+    { type: "function_call", call_id: "c1", name: "shell", arguments: "{}" },
+    { type: "reasoning", summary: [], encrypted_content: bound },
+  ] });
+  assert.equal(parsed.turn.messages.length, 1);
+  assert.equal(parsed.turn.messages[0]?.role, "assistant");
+  assert.deepEqual(parsed.turn.messages[0]?.content, [{ type: "tool_call", id: "c1", name: "shell", arguments: "{}", opaque }]);
+
+  const unknown = parseResponsesRequest({ model: "m", input: [
+    { type: "function_call", call_id: "c1", name: "shell", arguments: "{}" },
+    { type: "reasoning", summary: [], encrypted_content: encodeOpaque(opaque, "missing") },
+    { type: "message", role: "assistant", content: [{ type: "output_text", text: "done" }] },
+  ] });
+  assert.deepEqual(unknown.turn.messages[0]?.content, [{ type: "tool_call", id: "c1", name: "shell", arguments: "{}" }]);
+  assert.deepEqual(unknown.turn.messages[1]?.content, [{ type: "reasoning", opaque }, { type: "text", text: "done" }]);
+});
+
 /* ------------------------------------------------------------ respond */
 
 function sinkCollector(): { sink: ResponseSink; status: () => number | undefined; headers: () => Record<string, string>; text: () => string; events: () => Array<{ type: string; data: Record<string, unknown> }> } {
@@ -160,6 +182,49 @@ async function* from(events: Event[]): AsyncGenerator<Event> {
 const baseParsed = (over: Partial<ReturnType<typeof parseResponsesRequest>> = {}) => ({
   ...parseResponsesRequest({ model: "p/m", input: "hi", stream: true, tools: [{ type: "custom", name: "apply_patch" }, { type: "function", name: "shell", parameters: {} }] }),
   ...over,
+});
+
+async function assertBoundCallOutput(name: string, args: string, expectedType: string): Promise<void> {
+  const opaque = { provider: "p", model: "m", kind: "thought_signature", data: "sig-1" };
+  const events: Event[] = [
+    { type: "tool_call_start", id: "c1", name },
+    { type: "tool_call_delta", id: "c1", argumentsDelta: args },
+    { type: "tool_call_end", id: "c1", opaque },
+    { type: "done", stopReason: "tool_use" },
+  ];
+  const c = sinkCollector();
+  await respondResponses(from(events), baseParsed(), c.sink);
+  const frames = c.events();
+  const callDoneAt = frames.findIndex(frame => frame.type === "response.output_item.done" && (frame.data.item as { type: string }).type === expectedType);
+  assert.ok(callDoneAt >= 0);
+  const added = frames[callDoneAt + 1]!;
+  const done = frames[callDoneAt + 2]!;
+  assert.equal(added.type, "response.output_item.added");
+  assert.equal(done.type, "response.output_item.done");
+  assert.equal(added.data.output_index, done.data.output_index);
+  const addedItem = added.data.item as { id: string; type: string; summary: unknown[] };
+  const doneItem = done.data.item as { id: string; type: string; summary: unknown[]; encrypted_content: string };
+  assert.deepEqual(addedItem, { id: doneItem.id, type: "reasoning", summary: [] });
+  assert.deepEqual(doneItem.summary, []);
+  assert.deepEqual(decodeOpaqueEnvelope(doneItem.encrypted_content), { opaque, callId: "c1" });
+  assert.ok(!frames.some(frame => frame.type.startsWith("response.reasoning_summary")));
+  const completed = frames.at(-1)!.data.response as { output: Array<{ type: string; encrypted_content?: string }> };
+  assert.deepEqual(completed.output.map(item => item.type), [expectedType, "reasoning"]);
+  assert.equal(completed.output[1]?.encrypted_content, doneItem.encrypted_content);
+
+  const nonstream = sinkCollector();
+  await respondResponses(from(events), baseParsed({ stream: false }), nonstream.sink);
+  const response = JSON.parse(nonstream.text()) as { output: Array<{ type: string; encrypted_content?: string }> };
+  assert.deepEqual(response.output.map(item => item.type), [expectedType, "reasoning"]);
+  assert.deepEqual(decodeOpaqueEnvelope(response.output[1]!.encrypted_content!), { opaque, callId: "c1" });
+}
+
+test("respond: a function call's opaque follows its completed item as bound reasoning", async () => {
+  await assertBoundCallOutput("shell", '{"cmd":"ls"}', "function_call");
+});
+
+test("respond: a lowered custom call's opaque follows its completed item as bound reasoning", async () => {
+  await assertBoundCallOutput("apply_patch", JSON.stringify({ input: "patch" }), "custom_tool_call");
 });
 
 test("respond: text-only turn emits the canonical sequence with usage details always present", async () => {

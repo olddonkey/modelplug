@@ -86,18 +86,19 @@ const DROPPED_ITEM_TYPES = new Set([
   "compaction",
 ]);
 
-const EFFORTS: Record<string, ReasoningEffort> = { none: "minimal", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "max", max: "max" };
+const EFFORTS: Record<string, ReasoningEffort> = { none: "minimal", minimal: "minimal", low: "low", medium: "medium", high: "high", xhigh: "xhigh", max: "max" };
 
 /* ------------------------------------------------------------- opaque */
 
 /** Provider-bound bytes travel inside `encrypted_content`, which the client echoes back untouched. */
-export function encodeOpaque(opaque: Opaque): string {
+export function encodeOpaque(opaque: Opaque, callId?: string): string {
   const payload: Record<string, unknown> = { v: 1, p: opaque.provider, k: opaque.kind, d: opaque.data };
   if (opaque.model !== undefined) payload.m = opaque.model;
+  if (callId !== undefined) payload.c = callId;
   return Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
 }
 
-export function decodeOpaque(text: string): Opaque | undefined {
+export function decodeOpaqueEnvelope(text: string): { opaque: Opaque; callId?: string } | undefined {
   try {
     const parsed: unknown = JSON.parse(Buffer.from(text, "base64").toString("utf8"));
     if (!parsed || typeof parsed !== "object") return undefined;
@@ -105,10 +106,14 @@ export function decodeOpaque(text: string): Opaque | undefined {
     if (o.v !== 1 || typeof o.p !== "string" || typeof o.k !== "string" || typeof o.d !== "string") return undefined;
     const opaque: Opaque = { provider: o.p, kind: o.k, data: o.d };
     if (typeof o.m === "string") opaque.model = o.m;
-    return opaque;
+    return { opaque, ...(typeof o.c === "string" ? { callId: o.c } : {}) };
   } catch {
     return undefined;
   }
+}
+
+export function decodeOpaque(text: string): Opaque | undefined {
+  return decodeOpaqueEnvelope(text)?.opaque;
 }
 
 /* -------------------------------------------------------------- parse */
@@ -350,8 +355,15 @@ function parseInput(raw: unknown, systemParts: string[], lowering: Lowering, too
         if (summary) part.text = summary;
         const encrypted = str(item.encrypted_content);
         if (encrypted) {
-          const opaque = decodeOpaque(encrypted);
-          if (opaque) part.opaque = opaque;
+          const envelope = decodeOpaqueEnvelope(encrypted);
+          if (envelope?.callId) {
+            const call = messages.toReversed().flatMap(message => message.role === "assistant" ? message.content.toReversed() : []).find(content => content.type === "tool_call" && content.id === envelope.callId);
+            if (call?.type === "tool_call") {
+              call.opaque = envelope.opaque;
+              break;
+            }
+          }
+          if (envelope) part.opaque = envelope.opaque;
           else lowering.warnings.push("dropped a reasoning item minted by another backend");
         }
         if (part.text || part.opaque) pendingReasoning.push(part);
@@ -735,6 +747,14 @@ export async function respondResponses(events: AsyncIterable<Event>, parsed: Par
           break;
         }
         closeCall(call, true);
+        if (event.opaque) {
+          const index = nextIndex++;
+          const id = uid("rs");
+          emit("response.output_item.added", { output_index: index, item: { id, type: "reasoning", summary: [] } });
+          const item: JsonObject = { id, type: "reasoning", summary: [], encrypted_content: encodeOpaque(event.opaque, call.callId) };
+          output.push(item);
+          emit("response.output_item.done", { output_index: index, item });
+        }
         break;
       }
       case "done": {
