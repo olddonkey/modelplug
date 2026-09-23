@@ -14,6 +14,9 @@ const NOT_YET = "openai-responses encode/decode arrive in milestone 7; this buil
 
 export const openaiResponsesWire: Wire = {
   name: "openai-responses",
+  passthroughHeaders(target) {
+    return target.apiKey ? { authorization: `Bearer ${target.apiKey}` } : {};
+  },
   encode(_turn: Turn, _caps: Capabilities, _target: ProviderTarget, _stream: boolean): WireRequest {
     throw new Error(NOT_YET);
   },

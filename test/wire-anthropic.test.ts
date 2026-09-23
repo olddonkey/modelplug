@@ -242,3 +242,8 @@ test("modelsRequest: Anthropic URL and headers; parseModels reads data ids", () 
   assert.deepEqual(anthropicWire.parseModels?.({ data: [{ id: "model-b" }, { id: "model-a" }, { id: "model-a" }, { display_name: "missing" }] }), ["model-a", "model-b"]);
   assert.deepEqual(anthropicWire.parseModels?.({ models: [{ slug: "other" }] }), []);
 });
+
+test("passthroughHeaders injects the protocol version and configured key only", () => {
+  assert.deepEqual(anthropicWire.passthroughHeaders?.(target), { "x-api-key": "k", "anthropic-version": "2023-06-01" });
+  assert.deepEqual(anthropicWire.passthroughHeaders?.({ name: "p", baseUrl: "https://api.example.test" }), { "anthropic-version": "2023-06-01" });
+});

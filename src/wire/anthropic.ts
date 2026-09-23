@@ -454,6 +454,9 @@ export const anthropicWire: Wire = {
   name: "anthropic",
   encode: encodeAnthropicRequest,
   decode: decodeAnthropicStream,
+  passthroughHeaders(target) {
+    return { ...(target.apiKey ? { "x-api-key": target.apiKey } : {}), "anthropic-version": ANTHROPIC_VERSION };
+  },
   classifyError(status, headers, bodyText, target) {
     return classifyAnthropicError(status, headers, bodyText, target.name);
   },

@@ -8,6 +8,7 @@ export interface Handlers {
   responses?: BodyHandler;
   compact?: BodyHandler;
   messages?: BodyHandler;
+  countTokens?: BodyHandler;
 }
 
 const MAX_BODY_BYTES = 32 * 1024 * 1024;
@@ -88,12 +89,14 @@ export const ROUTE_PATHS: Record<keyof Handlers, string> = {
   responses: "/v1/responses",
   compact: "/v1/responses/compact",
   messages: "/v1/messages",
+  countTokens: "/v1/messages/count_tokens",
 };
 
 const ROUTES: Record<string, keyof Handlers> = {
   "/v1/responses": "responses",
   "/v1/responses/compact": "compact",
   "/v1/messages": "messages",
+  "/v1/messages/count_tokens": "countTokens",
 };
 
 class BodyError extends Error {

@@ -86,9 +86,6 @@ probes.
 
 ## Claude Code
 
-> The `/v1/messages` ingress is milestone 6. Until it lands, Claude Code gets a
-> 501 from modelplug. The snippet is here so the shape is known.
-
 ```bash
 export ANTHROPIC_BASE_URL="http://127.0.0.1:10100"
 export ANTHROPIC_AUTH_TOKEN="modelplug"
@@ -99,6 +96,10 @@ export ANTHROPIC_MODEL="deepseek/deepseek-v4"
 
 `ANTHROPIC_AUTH_TOKEN` can be anything; modelplug does not read it. Logging in
 with a Claude subscription through modelplug is a permanent non-goal.
+Use a `provider/model` name to route through the IR. An `anthropic` provider
+relays Messages responses byte for byte with its configured key injected.
+`/v1/messages/count_tokens` is exact on passthrough and an estimate for routed
+providers (text bytes divided by four, rounded up, plus 1,500 per image).
 
 ## Any other Responses client
 

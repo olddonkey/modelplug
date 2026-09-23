@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { classifyResponsesError, retryAfterMsFrom, upstreamErrorMessage } from "../src/wire/openai-responses.ts";
+import { classifyResponsesError, openaiResponsesWire, retryAfterMsFrom, upstreamErrorMessage } from "../src/wire/openai-responses.ts";
 
 const h = (init?: Record<string, string>): Headers => new Headers(init ?? {});
 
@@ -51,4 +51,9 @@ test("error messages come from OpenAI, backend detail, or raw text", () => {
   assert.deepEqual(upstreamErrorMessage('{"detail":{"message":"dm","code":"dc"}}'), { message: "dm", code: "dc" });
   assert.deepEqual(upstreamErrorMessage("plain"), { message: "plain" });
   assert.deepEqual(upstreamErrorMessage("   "), { message: "" });
+});
+
+test("passthroughHeaders injects Bearer auth only when a key is present", () => {
+  assert.deepEqual(openaiResponsesWire.passthroughHeaders?.({ name: "p", baseUrl: "https://api.example.test", apiKey: "k" }), { authorization: "Bearer k" });
+  assert.deepEqual(openaiResponsesWire.passthroughHeaders?.({ name: "p", baseUrl: "https://api.example.test" }), {});
 });

@@ -125,7 +125,7 @@ async function start(config: ResolvedConfig, portFlag: string | undefined, optio
       headers: extra,
       ...(options.forwardModel ? { model: options.forwardModel } : {}),
     });
-    handlers = { responses: forward, compact: forward, messages: forward };
+    handlers = { responses: forward, compact: forward, messages: forward, countTokens: forward };
   }
   let statusLines: (() => string[]) | undefined;
   let discovered: Record<string, string[]> = {};
@@ -166,7 +166,6 @@ async function start(config: ResolvedConfig, portFlag: string | undefined, optio
     if (chatgpt.length > 0) console.log(`chatgpt passthrough: ${chatgpt.join(", ")}  (accounts and quota: http://${config.host}:${port}/)`);
     const missing = Object.values(config.providers).filter(p => !WIRES[p.wire]).map(p => `${p.name} (${p.wire})`);
     if (missing.length > 0) console.log(`not served yet in this build: ${missing.join(", ")}`);
-    console.log("note: /v1/messages answers 501 until the messages ingress lands.");
   }
   probe?.();
   const stop = (): void => {
