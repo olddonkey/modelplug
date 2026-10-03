@@ -842,6 +842,10 @@ Exit: with a Grok subscription, `login grok` completes and Codex runs a task thr
 
 ### 7e. The Messages ingress carries tool-call Opaques
 
+**Status (2026-09-23):** Implemented against a fake Gemini upstream. Tool-call
+Opaques round-trip through the Messages ingress; live acceptance still needs
+a Google API key and a live Claude Code run.
+
 7c taught the Responses ingress to carry a tool call's provider data (Gemini's
 `thoughtSignature`) through the client transcript: the call's `Opaque` rides in
 a `reasoning` item whose `encrypted_content` is our envelope with the call id
@@ -890,7 +894,7 @@ waits for a recording only a live Codex session can produce.
 
 ### 8a. Release hygiene
 
-1. `CHANGELOG.md` (Keep a Changelog shape): a `0.1.0` section listing, per
+1. `CHANGELOG.md` (Keep a Changelog shape): an `Unreleased` section for 0.1.0 listing, per
    milestone, what a user can do: ChatGPT-subscription passthrough with an
    account pool; Chat Completions routing verified with Kimi; the `anthropic`
    wire; the Claude Code ingress with the messages → anthropic passthrough
@@ -907,8 +911,10 @@ waits for a recording only a live Codex session can produce.
    `CHANGELOG.md`; the quick start stays.
 4. `docs/PLAN.md`: the milestone table in `DESIGN.md` and the status lines
    here say what shipped; `docs/CLIENTS.md` unchanged unless stale.
-5. Tests: none new; `npm run check` and `npm run build` green; a test that
-   `package.json` `files` covers `CHANGELOG.md` is not worth having.
+5. `prepublishOnly` runs `npm run check`; a lifecycle regression verifies
+   that a failing check blocks it. `npm run check` and `npm run build` green.
+   `npm pack` retains its build-only prepack hook. Rename `Unreleased` to the
+   version and actual release date when publishing.
 
 Exit: `npm pack` produces a tarball the maintainer publishes by hand
 (publishing needs the npm account; not automated).
