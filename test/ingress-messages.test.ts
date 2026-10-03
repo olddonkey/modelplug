@@ -60,7 +60,7 @@ test("parse: thinking envelope survives, foreign signatures and redacted blocks 
   assert.equal(parsed.lowering.warnings.length, 6);
 });
 
-test("parse: call-bound envelopes attach before or after tool_use and prefer the current assistant", () => {
+test("parse: call-bound envelopes attach before or after tool_use only in the current assistant", () => {
   const opaque = { provider: "p", kind: "thought_signature", data: "sig-1" };
   const envelope = encodeOpaque(opaque, "call-1");
   for (const bound of [
@@ -87,11 +87,29 @@ test("parse: call-bound envelopes attach before or after tool_use and prefer the
     { role: "assistant", content: [{ type: "redacted_thinking", data: envelope }] },
   ] }));
   assert.deepEqual(earlier.turn.messages[1], { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "old", arguments: "{}" }] });
-  assert.deepEqual(earlier.turn.messages[2], { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "new", arguments: "{}", opaque }] });
-  assert.deepEqual(earlier.lowering.warnings, []);
+  assert.deepEqual(earlier.turn.messages[2], { role: "assistant", content: [{ type: "tool_call", id: "call-1", name: "new", arguments: "{}" }] });
+  assert.deepEqual(earlier.lowering.warnings, ['dropped a tool-call opaque for unknown call id "call-1"']);
 });
 
-test("parse: unbound envelopes remain reasoning; unknown call ids are dropped with warnings", () => {
+test("parse: an orphan call_0 envelope cannot overwrite an earlier turn's signature", () => {
+  const original = { provider: "p", kind: "thought_signature", data: "sig-1" };
+  const orphan = { ...original, data: "sig-2" };
+  const parsed = parseMessagesRequest(base({ messages: [
+    { role: "user", content: "patch" },
+    { role: "assistant", content: [
+      { type: "redacted_thinking", data: encodeOpaque(original, "call_0") },
+      { type: "tool_use", id: "call_0", name: "apply_patch", input: {} },
+    ] },
+    { role: "user", content: [{ type: "tool_result", tool_use_id: "call_0", content: "applied" }] },
+    { role: "assistant", content: [{ type: "redacted_thinking", data: encodeOpaque(orphan, "call_0") }] },
+  ] }));
+  assert.deepEqual(parsed.turn.messages[1], { role: "assistant", content: [
+    { type: "tool_call", id: "call_0", name: "apply_patch", arguments: "{}", opaque: original },
+  ] });
+  assert.deepEqual(parsed.lowering.warnings, ['dropped a tool-call opaque for unknown call id "call_0"']);
+});
+
+test("parse: unbound envelopes remain reasoning; unknown call signatures are dropped without deleting visible text", () => {
   const opaque = { provider: "p", kind: "thought_signature", data: "sig-1" };
   const unbound = encodeOpaque(opaque);
   const unknown = encodeOpaque(opaque, "missing");
@@ -107,6 +125,7 @@ test("parse: unbound envelopes remain reasoning; unknown call ids are dropped wi
   assert.deepEqual(parsed.turn.messages[1], { role: "assistant", content: [
     { type: "reasoning", opaque },
     { type: "reasoning", text: "visible", opaque },
+    { type: "reasoning", text: "dropped" },
   ] });
   assert.equal(parsed.lowering.warnings.length, 2);
   assert.ok(parsed.lowering.warnings.every(warning => warning.includes("missing")));
@@ -204,7 +223,7 @@ test("respond: tool call and parallel tool calls preserve JSON input and indices
   assert.deepEqual(c.frames().at(-2)!.data.delta, { stop_reason: "tool_use", stop_sequence: null });
 });
 
-test("respond: tool-call Opaque follows its tool_use block in SSE and non-streaming output", async () => {
+test("respond: tool-call Opaque precedes its tool_use block in SSE and non-streaming output", async () => {
   const opaque = { provider: "p", model: "m", kind: "thought_signature", data: "sig-1" };
   const events: Event[] = [
     { type: "tool_call_start", id: "call-1", name: "apply_patch" },
@@ -214,17 +233,17 @@ test("respond: tool-call Opaque follows its tool_use block in SSE and non-stream
   ];
   const streamed = await emitted(events);
   const blocks = streamed.frames().filter(frame => frame.event === "content_block_start");
-  assert.deepEqual(blocks.map(frame => (frame.data.content_block as Record<string, unknown>).type), ["tool_use", "redacted_thinking"]);
-  const redacted = blocks[1]!.data.content_block as { data: string };
+  assert.deepEqual(blocks.map(frame => (frame.data.content_block as Record<string, unknown>).type), ["redacted_thinking", "tool_use"]);
+  const redacted = blocks[0]!.data.content_block as { data: string };
   assert.deepEqual(decodeOpaqueEnvelope(redacted.data), { opaque, callId: "call-1" });
   assert.deepEqual(streamed.frames().filter(frame => frame.event.startsWith("content_block_")).map(frame => frame.event), [
-    "content_block_start", "content_block_delta", "content_block_stop", "content_block_start", "content_block_stop",
+    "content_block_start", "content_block_stop", "content_block_start", "content_block_delta", "content_block_stop",
   ]);
   const plain = await emitted(events, false);
   const message = JSON.parse(plain.text()) as { content: Array<Record<string, unknown>> };
   assert.deepEqual(message.content, [
-    { type: "tool_use", id: "call-1", name: "apply_patch", input: { input: "patch" } },
     { type: "redacted_thinking", data: redacted.data },
+    { type: "tool_use", id: "call-1", name: "apply_patch", input: { input: "patch" } },
   ]);
   const noOpaque = await emitted(events.map(event => event.type === "tool_call_end" ? { type: "tool_call_end", id: event.id } : event));
   assert.deepEqual(noOpaque.frames().filter(frame => frame.event === "content_block_start").map(frame => (frame.data.content_block as Record<string, unknown>).type), ["tool_use"]);

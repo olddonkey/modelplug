@@ -6,7 +6,7 @@ import type {
   Usage, UserPart,
 } from "../ir.ts";
 import { encodeSse } from "../sse.ts";
-import { decodeOpaqueEnvelope, encodeOpaque, IngressError } from "./responses.ts";
+import { decodeOpaqueEnvelope, encodeOpaque, findToolCall, IngressError } from "./responses.ts";
 import type { RespondOptions } from "./responses.ts";
 
 export interface ParsedMessages extends ParsedIngress {
@@ -106,7 +106,7 @@ export function parseMessagesRequest(body: unknown): ParsedMessages {
       if (parts.length > 0) turn.messages.push({ role: "user", content: parts });
     } else {
       const parts: AssistantPart[] = [];
-      const callOpaques: Array<{ callId: string; opaque: Opaque; part?: AssistantPart }> = [];
+      const callOpaques: Array<{ callId: string; opaque: Opaque }> = [];
       for (const block of content) {
         switch (block.type) {
           case "text":
@@ -126,7 +126,7 @@ export function parseMessagesRequest(body: unknown): ParsedMessages {
             if (typeof block.signature === "string") {
               const envelope = decodeOpaqueEnvelope(block.signature);
               if (envelope?.callId) {
-                callOpaques.push({ callId: envelope.callId, opaque: envelope.opaque, part });
+                callOpaques.push({ callId: envelope.callId, opaque: envelope.opaque });
                 parts.push(part);
                 break;
               }
@@ -150,14 +150,12 @@ export function parseMessagesRequest(body: unknown): ParsedMessages {
           }
         }
       }
-      for (const { callId, opaque, part } of callOpaques) {
-        const call = parts.toReversed().find(part => part.type === "tool_call" && part.id === callId)
-          ?? turn.messages.toReversed().flatMap(message => message.role === "assistant" ? message.content.toReversed() : []).find(part => part.type === "tool_call" && part.id === callId);
-        if (call?.type === "tool_call") call.opaque = opaque;
-        else {
-          if (part) parts.splice(parts.indexOf(part), 1);
-          lowering.warnings.push(`dropped a tool-call opaque for unknown call id "${callId}"`);
-        }
+      for (const { callId, opaque } of callOpaques) {
+        // Gemini ids repeat each turn. An orphan envelope must never bind to
+        // another assistant message, even when that message has the same id.
+        const call = findToolCall(parts, callId);
+        if (call) call.opaque = opaque;
+        else lowering.warnings.push(`dropped a tool-call opaque for unknown call id "${callId}"`);
       }
       if (parts.length > 0) turn.messages.push({ role: "assistant", content: parts });
     }
@@ -305,12 +303,6 @@ export async function respondMessages(events: AsyncIterable<Event>, parsed: Pars
     for (const call of calls.values()) {
       if (!call.input) break;
       close();
-      const index = content.length;
-      const block: Block = { type: "tool_use", id: call.id, name: call.name, input: call.input };
-      content.push(block);
-      emit("content_block_start", { index, content_block: { type: "tool_use", id: call.id, name: call.name, input: {} } });
-      for (const chunk of call.chunks) emit("content_block_delta", { index, delta: { type: "input_json_delta", partial_json: chunk } });
-      emit("content_block_stop", { index });
       if (call.opaque) {
         const block: Block = { type: "redacted_thinking", data: encodeOpaque(call.opaque, call.id) };
         const opaqueIndex = content.length;
@@ -318,6 +310,12 @@ export async function respondMessages(events: AsyncIterable<Event>, parsed: Pars
         emit("content_block_start", { index: opaqueIndex, content_block: block });
         emit("content_block_stop", { index: opaqueIndex });
       }
+      const index = content.length;
+      const block: Block = { type: "tool_use", id: call.id, name: call.name, input: call.input };
+      content.push(block);
+      emit("content_block_start", { index, content_block: { type: "tool_use", id: call.id, name: call.name, input: {} } });
+      for (const chunk of call.chunks) emit("content_block_delta", { index, delta: { type: "input_json_delta", partial_json: chunk } });
+      emit("content_block_stop", { index });
       calls.delete(call.id);
     }
   };

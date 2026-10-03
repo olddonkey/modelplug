@@ -852,22 +852,23 @@ data; a `tool_call_end` event's `opaque` is dropped, so Claude Code routed to a
 Gemini model loses every thought signature on the replay turn.
 
 1. `src/ingress/messages.ts`, respond: on `tool_call_end` with `event.opaque`,
-   once the `tool_use` block has stopped, emit one `redacted_thinking` block
+   before opening the `tool_use` block, emit one `redacted_thinking` block
    whose `data` is `encodeOpaque(event.opaque, call.id)` (a `content_block_start`
    carrying the whole block, then `content_block_stop`; redacted blocks have no
-   deltas). The non-streaming message carries the same block right after its
+   deltas). The non-streaming message carries the same block right before its
    `tool_use` block. Claude Code replays assistant blocks unchanged, so the
    envelope comes back on the next turn.
 2. Parse: a `redacted_thinking` block (and a `thinking` signature) whose envelope
    carries a call id attaches its `Opaque` to the `tool_call` part with that id,
-   looking in the current assistant message first and then in earlier assistant
-   messages, most recent first, as the Responses ingress does. No such call: the
-   block is dropped with a lowering warning. An envelope without a call id keeps
+   looking only in the current assistant message (ids repeat across turns).
+   No such call: drop the envelope with a lowering warning, preserving any
+   visible thinking text. An envelope without a call id keeps
    today's behaviour (a reasoning part with the Opaque).
 3. `src/ingress/README.md`, the `messages` row: tool-call provider data rides in a
    `redacted_thinking` block bound to the call by our envelope.
-4. Tests, `test/ingress-messages.test.ts`: respond emits `tool_use` then a
-   `redacted_thinking` whose data decodes to the Opaque and the call id, and
+4. Tests, `test/ingress-messages.test.ts`: respond emits a
+   `redacted_thinking` whose data decodes to the Opaque and the call id before
+   its `tool_use` block, and
    emits no extra block when the event has no Opaque; the non-streaming message
    carries the block; parse binds the block to the call whether it follows or
    precedes the `tool_use` block, leaves an unbound envelope as a reasoning
@@ -876,7 +877,9 @@ Gemini model loses every thought signature on the replay turn.
    `POST /v1/messages` to a fake Gemini upstream: turn 1 answers a `functionCall`
    with `thoughtSignature: "sig-1"`; the scripted client replays the assistant
    blocks it received plus a `tool_result`; turn 2's request carries
-   `thoughtSignature: "sig-1"` on the `functionCall` part. Existing tests stay.
+   `thoughtSignature: "sig-1"` on the `functionCall` part and returns another
+   `call_0` with `sig-2`; turn 3 carries both signatures on their own calls.
+   Both SSE and non-streaming client replays are tested. Existing tests stay.
 
 Exit: the Messages round trip carries the signature; `npm run check` green.
 

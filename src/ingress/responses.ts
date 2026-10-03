@@ -112,6 +112,11 @@ export function decodeOpaqueEnvelope(text: string): { opaque: Opaque; callId?: s
   }
 }
 
+/** The most recent matching call in one assistant message, without copying it. */
+export function findToolCall(parts: AssistantPart[], id: string): Extract<AssistantPart, { type: "tool_call" }> | undefined {
+  return parts.findLast((part): part is Extract<AssistantPart, { type: "tool_call" }> => part.type === "tool_call" && part.id === id);
+}
+
 export function decodeOpaque(text: string): Opaque | undefined {
   return decodeOpaqueEnvelope(text)?.opaque;
 }
@@ -357,8 +362,12 @@ function parseInput(raw: unknown, systemParts: string[], lowering: Lowering, too
         if (encrypted) {
           const envelope = decodeOpaqueEnvelope(encrypted);
           if (envelope?.callId) {
-            const call = messages.toReversed().flatMap(message => message.role === "assistant" ? message.content.toReversed() : []).find(content => content.type === "tool_call" && content.id === envelope.callId);
-            if (call?.type === "tool_call") {
+            let call: ReturnType<typeof findToolCall>;
+            for (let index = messages.length - 1; index >= 0 && !call; index--) {
+              const message = messages[index]!;
+              if (message.role === "assistant") call = findToolCall(message.content, envelope.callId);
+            }
+            if (call) {
               call.opaque = envelope.opaque;
               break;
             }
