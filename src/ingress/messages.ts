@@ -2,11 +2,11 @@
 import { randomBytes } from "node:crypto";
 import type {
   AssistantPart, ErrorKind, Event, ImagePart, Ingress, JsonObject, Message,
-  ParsedIngress, ReasoningEffort, ResponseSink, Tool, ToolResultPart, Turn,
+  Opaque, ParsedIngress, ReasoningEffort, ResponseSink, Tool, ToolResultPart, Turn,
   Usage, UserPart,
 } from "../ir.ts";
 import { encodeSse } from "../sse.ts";
-import { decodeOpaque, encodeOpaque, IngressError } from "./responses.ts";
+import { decodeOpaqueEnvelope, encodeOpaque, findToolCall, IngressError } from "./responses.ts";
 import type { RespondOptions } from "./responses.ts";
 
 export interface ParsedMessages extends ParsedIngress {
@@ -106,6 +106,7 @@ export function parseMessagesRequest(body: unknown): ParsedMessages {
       if (parts.length > 0) turn.messages.push({ role: "user", content: parts });
     } else {
       const parts: AssistantPart[] = [];
+      const callOpaques: Array<{ callId: string; opaque: Opaque }> = [];
       for (const block of content) {
         switch (block.type) {
           case "text":
@@ -123,16 +124,22 @@ export function parseMessagesRequest(body: unknown): ParsedMessages {
             if (typeof block.thinking !== "string") return bad("thinking block needs thinking text");
             const part: AssistantPart = { type: "reasoning", text: block.thinking };
             if (typeof block.signature === "string") {
-              const opaque = decodeOpaque(block.signature);
-              if (opaque) part.opaque = opaque;
+              const envelope = decodeOpaqueEnvelope(block.signature);
+              if (envelope?.callId) {
+                callOpaques.push({ callId: envelope.callId, opaque: envelope.opaque });
+                parts.push(part);
+                break;
+              }
+              if (envelope) part.opaque = envelope.opaque;
               else lowering.warnings.push("dropped a thinking signature minted by another backend");
             }
             parts.push(part);
             break;
           }
           case "redacted_thinking": {
-            const opaque = typeof block.data === "string" ? decodeOpaque(block.data) : undefined;
-            if (opaque) parts.push({ type: "reasoning", opaque });
+            const envelope = typeof block.data === "string" ? decodeOpaqueEnvelope(block.data) : undefined;
+            if (envelope?.callId) callOpaques.push({ callId: envelope.callId, opaque: envelope.opaque });
+            else if (envelope) parts.push({ type: "reasoning", opaque: envelope.opaque });
             else lowering.warnings.push("dropped a redacted thinking block minted by another backend");
             break;
           }
@@ -142,6 +149,13 @@ export function parseMessagesRequest(body: unknown): ParsedMessages {
             else unsupported(type);
           }
         }
+      }
+      for (const { callId, opaque } of callOpaques) {
+        // Gemini ids repeat each turn. An orphan envelope must never bind to
+        // another assistant message, even when that message has the same id.
+        const call = findToolCall(parts, callId);
+        if (call) call.opaque = opaque;
+        else lowering.warnings.push(`dropped a tool-call opaque for unknown call id "${callId}"`);
       }
       if (parts.length > 0) turn.messages.push({ role: "assistant", content: parts });
     }
@@ -249,7 +263,7 @@ export async function respondMessages(events: AsyncIterable<Event>, parsed: Pars
   const content = message.content as Block[];
   let started = false;
   let open: { kind: "text" | "thinking"; block: Block; index: number } | undefined;
-  const calls = new Map<string, { id: string; name: string; args: string; chunks: string[]; input?: JsonObject }>();
+  const calls = new Map<string, { id: string; name: string; args: string; chunks: string[]; input?: JsonObject; opaque?: Opaque }>();
   const emit = (type: string, data: JsonObject): void => { if (parsed.stream) sink.write(encodeSse(type, JSON.stringify({ type, ...data }))); };
   const start = (): void => {
     if (started) return;
@@ -289,6 +303,13 @@ export async function respondMessages(events: AsyncIterable<Event>, parsed: Pars
     for (const call of calls.values()) {
       if (!call.input) break;
       close();
+      if (call.opaque) {
+        const block: Block = { type: "redacted_thinking", data: encodeOpaque(call.opaque, call.id) };
+        const opaqueIndex = content.length;
+        content.push(block);
+        emit("content_block_start", { index: opaqueIndex, content_block: block });
+        emit("content_block_stop", { index: opaqueIndex });
+      }
       const index = content.length;
       const block: Block = { type: "tool_use", id: call.id, name: call.name, input: call.input };
       content.push(block);
@@ -355,6 +376,7 @@ export async function respondMessages(events: AsyncIterable<Event>, parsed: Pars
           break;
         }
         call.input = input as JsonObject;
+        if (event.opaque) call.opaque = event.opaque;
         flushCalls();
         break;
       }

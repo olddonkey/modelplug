@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import type { Event, ResponseSink } from "../src/ir.ts";
-import { decodeOpaque, decodeOpaqueEnvelope, encodeOpaque, IngressError, parseResponsesRequest, respondResponses } from "../src/ingress/responses.ts";
+import type { AssistantPart, Event, ResponseSink } from "../src/ir.ts";
+import { decodeOpaque, decodeOpaqueEnvelope, encodeOpaque, findToolCall, IngressError, parseResponsesRequest, respondResponses } from "../src/ingress/responses.ts";
 
 const fixture = (name: string): unknown => JSON.parse(readFileSync(new URL(`./fixtures/responses/classic/${name}.request.json`, import.meta.url), "utf8"));
 const lite = (name: string): unknown => JSON.parse(readFileSync(new URL(`./fixtures/responses/lite/${name}.request.json`, import.meta.url), "utf8"));
@@ -141,6 +141,27 @@ test("parse: a bound reasoning envelope attaches to its call; unknown ids remain
   ] });
   assert.deepEqual(unknown.turn.messages[0]?.content, [{ type: "tool_call", id: "c1", name: "shell", arguments: "{}" }]);
   assert.deepEqual(unknown.turn.messages[1]?.content, [{ type: "reasoning", opaque }, { type: "text", text: "done" }]);
+});
+
+test("findToolCall returns the latest matching call without changing the parts", () => {
+  const first: AssistantPart = { type: "tool_call", id: "call_0", name: "old", arguments: "{}" };
+  const last: AssistantPart = { type: "tool_call", id: "call_0", name: "new", arguments: "{}" };
+  const parts: AssistantPart[] = [first, { type: "text", text: "between" }, last];
+  assert.equal(findToolCall(parts, "call_0"), last);
+  assert.equal(findToolCall(parts, "absent"), undefined);
+  assert.deepEqual(parts, [first, { type: "text", text: "between" }, last]);
+});
+
+test("parse: Responses binds repeated call ids to the latest assistant message", () => {
+  const opaque = { provider: "p", kind: "thought_signature", data: "sig-2" };
+  const parsed = parseResponsesRequest({ model: "m", input: [
+    { type: "function_call", call_id: "call_0", name: "old", arguments: "{}" },
+    { type: "function_call_output", call_id: "call_0", output: "done" },
+    { type: "function_call", call_id: "call_0", name: "new", arguments: "{}" },
+    { type: "reasoning", summary: [], encrypted_content: encodeOpaque(opaque, "call_0") },
+  ] });
+  assert.deepEqual(parsed.turn.messages[0]?.content, [{ type: "tool_call", id: "call_0", name: "old", arguments: "{}" }]);
+  assert.deepEqual(parsed.turn.messages[2]?.content, [{ type: "tool_call", id: "call_0", name: "new", arguments: "{}", opaque }]);
 });
 
 /* ------------------------------------------------------------ respond */
