@@ -6,12 +6,10 @@ One process, one config file, two ingress protocols, four wire protocols, zero
 writes to your Codex or Claude Code installation. Bring API keys, or log in
 with your ChatGPT subscription. You can read the whole thing in a day.
 
-> Status: pre-alpha. Two paths work end to end with real Codex: the
-> ChatGPT-subscription passthrough, and routing to any Chat Completions
-> provider (DeepSeek, Kimi, Qwen, GLM, Groq, OpenRouter, Ollama, vLLM, …).
-> The Anthropic wire is in; live acceptance awaits an API key. `modelplug
-> check` probes every provider. The Claude Code ingress is in (live run
-> pending). Gemini is a later milestone and answers a clear error until then.
+> Status: 0.1.0. Real Codex works with ChatGPT-subscription passthrough and
+> Chat Completions routing to Kimi K3 (shell, `apply_patch`, image input).
+> The Anthropic, OpenAI Responses IR, and Gemini wires are tested against fakes
+> but await live keys; Claude Code ingress awaits a live run. [Changelog](CHANGELOG.md).
 > Client setup: [docs/CLIENTS.md](docs/CLIENTS.md). Design:
 > [docs/DESIGN.md](docs/DESIGN.md), [src/wire/README.md](src/wire/README.md).
 
